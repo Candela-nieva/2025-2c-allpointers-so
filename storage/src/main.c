@@ -2,5 +2,9 @@
 
 int main(int argc, char* argv[]) {
     saludar("storage");
+    inicializar_config();
+    cargar_config();
+    crear_logger();
+
     return 0;
 }
