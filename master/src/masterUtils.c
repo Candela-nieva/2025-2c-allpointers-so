@@ -1,4 +1,4 @@
-// Inicializa la estructura de configuración
+#include "masterUtils.h"
 
 int tiempo_aging;
 

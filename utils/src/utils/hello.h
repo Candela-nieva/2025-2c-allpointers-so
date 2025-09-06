@@ -20,7 +20,8 @@ typedef struct{
 } t_paquete;
 
 typedef enum{
-
+    HANDSHAKE_WORKER,
+    HANDSHAKE_QUERY
 } op_code;
 
 void saludar(char* quien);

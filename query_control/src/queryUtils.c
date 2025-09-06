@@ -1,3 +1,5 @@
+#include "queryUtils.h"
+
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_master)); //Reserva memoria
     config_struct->modulo = NULL;
@@ -6,10 +8,19 @@ void inicializar_config(void){
 }
 
 void cargar_config() {
+    /*if(argc == 3) {
+        master_config = strdup(argv[1]);
+        archivo_query = strdup(argv[2]); // Copia el nombre del archivo query
+        prioridad = atoi(argv[3]); // Convierte el tercer argumento a entero
+    } else {
+        archivo_query = NULL;
+        prioridad = 0; // No hay argumentos, no se inicializa el proceso
+    }*/
+
     config = config_create(master_config);
     config_struct->modulo = config_get_string_value (config, "MODULO");
     config_struct->ip = config_get_string_value (config, "IP_MASTER");
-    config_struct->puerto_escucha = config_get_string_value(config, "PUERTO_MASTER");
+    config_struct->puerto_master = config_get_string_value(config, "PUERTO_MASTER");
 }
 
 // Función para iniciar el logger
