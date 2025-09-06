@@ -1,7 +1,10 @@
 // Inicializa la estructura de configuración
-
+#include "workerUtils.h"
 int tam_memoria;
 int retardo_memoria;
+
+int socket_storage;
+int socket_master;
 
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_master)); //Reserva memoria
@@ -47,4 +50,23 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 
 void crear_logger () {
     loggerWorker=iniciar_logger("worker.log","WORKER",true, log_level_from_string(config_struct->log_level));
+}
+
+void* iniciar_conexion_master(void* arg){
+    int id_worker = *(int*)arg;
+    free(arg);
+    socket_master = crear_conexion(config_struct->ip, config_struct->puerto_master);
+    send(socket_master, &id_worker, sizeof(int), 0);
+    log_info(loggerCpu, "Handshake con Master - Worker ID enviado: %d", id_worker);
+    return NULL;
+}
+
+void* iniciar_conexion_storage(void* arg){ 
+    socket_storage = crear_conexion(config_struct->ip, config_struct->puerto_storage);
+    if(socket_storage == -1) {
+        log_info(loggerCpu, "Error al crear la conexión con Storage");
+        pthread_exit(NULL); // Terminar el hilo si hay un error
+    }
+    enviar_operacion(socket_memoria, HANDSHAKE_MASTER); // Enviar el handshake a Memoria
+    return NULL; 
 }

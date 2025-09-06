@@ -2,7 +2,10 @@
 #define QUERYCTRUTILS_H
 
 #define TRUE 1
-
+#include <utils/hello.h>
+#include <sys/socket.h>
+#include <commons/log.h>
+#include <commons/config.h>
 typedef struct {
     char* modulo;
     char* ip;
