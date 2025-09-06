@@ -2,12 +2,15 @@
 #include "workerUtils.h"
 int tam_memoria;
 int retardo_memoria;
-
+t_log* loggerWorker = NULL;
+t_config* config = NULL;
+t_config_worker* config_struct = NULL;
 int socket_storage;
 int socket_master;
+char* config_worker;
 
 void inicializar_config(void){
-    config_struct = malloc(sizeof(t_config_master)); //Reserva memoria
+    config_struct = malloc(sizeof(t_config_worker)); //Reserva memoria
     config_struct->modulo = NULL;
     config_struct->ip_master = NULL;
     config_struct->puerto_master = NULL;
@@ -21,7 +24,7 @@ void inicializar_config(void){
 }
 
 void cargar_config() {
-    config = config_create(master_config);
+    config = config_create(config_worker);
     config_struct->modulo = config_get_string_value (config, "MODULO");
     config_struct->ip_master = config_get_string_value(config, "IP_MASTER");
     config_struct->puerto_master = config_get_string_value(config, "PUERTO_MASTER");
@@ -55,18 +58,21 @@ void crear_logger () {
 void* iniciar_conexion_master(void* arg){
     int id_worker = *(int*)arg;
     free(arg);
-    socket_master = crear_conexion(config_struct->ip, config_struct->puerto_master);
-    send(socket_master, &id_worker, sizeof(int), 0);
-    log_info(loggerCpu, "Handshake con Master - Worker ID enviado: %d", id_worker);
+    log_info(loggerWorker, "INTENTO HANDSHAKE CON MASTER");
+    socket_master = crear_conexion(config_struct->ip_master, config_struct->puerto_master);
+    t_paquete* paquete = crear_paquete(HANDSHAKE_WORKER);
+    agregar_a_paquete(paquete, &id_worker, sizeof(int));
+    enviar_paquete(paquete, socket_master);
+    log_info(loggerWorker, "Handshake con Master - Worker ID enviado: %d", id_worker);
     return NULL;
 }
 
 void* iniciar_conexion_storage(void* arg){ 
-    socket_storage = crear_conexion(config_struct->ip, config_struct->puerto_storage);
+    socket_storage = crear_conexion(config_struct->ip_storage, config_struct->puerto_storage);
     if(socket_storage == -1) {
-        log_info(loggerCpu, "Error al crear la conexión con Storage");
+        log_info(loggerWorker, "Error al crear la conexión con Storage");
         pthread_exit(NULL); // Terminar el hilo si hay un error
     }
-    enviar_operacion(socket_memoria, HANDSHAKE_MASTER); // Enviar el handshake a Memoria
+    enviar_operacion(socket_storage, HANDSHAKE_WORKER); // Enviar el handshake a Memoria
     return NULL; 
 }

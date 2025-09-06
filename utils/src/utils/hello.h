@@ -3,6 +3,13 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <commons/log.h>
+#include <stdint.h>
+#include <utils/chiches.h>
 
 /**
 * @brief Imprime un saludo por consola
@@ -21,7 +28,8 @@ typedef struct{
 
 typedef enum{
     HANDSHAKE_WORKER,
-    HANDSHAKE_QUERY
+    HANDSHAKE_QUERY,
+    MENSAJE
 } op_code;
 
 void saludar(char* quien);

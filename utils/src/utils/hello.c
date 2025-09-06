@@ -95,7 +95,7 @@ void enviar_mensaje(char *mensaje, int socket_cliente)
 
 void recibir_mensaje(t_log *logger, int socket_cliente)
 {
-    char *buffer = recibir_buffer(NULL, socket_cliente);
+    char *buffer = recibir_buffer(socket_cliente);
     log_info(logger, "Me llegó el mensaje: %s", buffer);
     free(buffer);
 }
@@ -110,11 +110,10 @@ void recibir_proceso(t_log *logger, int socket_cliente)
 // RECIBIR
 
 void *recibir_buffer(int socket_cliente) {
-    int *size;
-    recv(socket_cliente, size, sizeof(int), MSG_WAITALL);
-    void *buffer = malloc(*size);
-    recv(socket_cliente, buffer, *size, MSG_WAITALL);
-    free(size);
+    int size;
+    recv(socket_cliente, &size, sizeof(int), MSG_WAITALL);
+    void *buffer = malloc(size);
+    recv(socket_cliente, buffer, size, MSG_WAITALL);
     return buffer;
 }
 

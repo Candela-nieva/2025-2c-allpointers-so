@@ -1,26 +1,8 @@
 
 #include "masterUtils.h"
-
-int main(int argc, char* argv[]) {
-    saludar("master");
-    inicializar_config();
-    cargar_config();
-    crear_logger();
-    int fd_sv = crear_servidor(config_struct->puerto_escucha);
-    log_info(loggerMaster, "Servidor MASTER escuchando Peticiones");
-    while (1)
-    {
-        int *peticion = malloc(sizeof(int));
-        *peticion = esperar_cliente(fd_sv, "MEMORIA", loggerMemoria);
-
-        pthread_t tid;
-        pthread_create(&tid, NULL, atender_conexion, peticion);
-        pthread_detach(tid);
-    }
-    // Nunca llega acá
-    close(fd_sv);
-    return 0;
-}
+void* atender_conexion(void* arg);
+void atender_QueryControl(int fd);
+void atender_Worker(int fd);
 void* atender_conexion(void* arg){
     int fd = *(int *)arg;
     free(arg);
@@ -43,17 +25,39 @@ void* atender_conexion(void* arg){
     return NULL;
 }
 
+int main(int argc, char* argv[]) {
+    saludar("master");
+    config_master = "master.config";
+    inicializar_config();
+    cargar_config();
+    crear_logger();
+    int fd_sv = crear_servidor(config_struct->puerto_escucha);
+    log_info(loggerMaster, "Servidor MASTER escuchando Peticiones");
+    while (1)
+    {
+        int *peticion = malloc(sizeof(int));
+        *peticion = esperar_cliente(fd_sv, "MASTER", loggerMaster);
+
+        pthread_t tid;
+        pthread_create(&tid, NULL, atender_conexion, peticion);
+        pthread_detach(tid);
+    }
+    // Nunca llega acá
+    close(fd_sv);
+    return 0;
+}
+
 void atender_QueryControl(int fd){
     log_info(loggerMaster, "CONEXION EXITOSA CON QUERYCONTROL");
     int length_path, prioridad;
     int offset = 0;
     char* path_query;
-    void* buffer = recibir_buffer(buffer);
+    void* buffer = recibir_buffer(fd);
     memcpy(&length_path,buffer + offset, sizeof(int));
     offset += sizeof(int);
     path_query = malloc(length_path + 1);
 
-    memcpy(path_query, buffe + offset, length_path);
+    memcpy(path_query, buffer + offset, length_path);
     path_query[length_path] = '\0';
     offset += length_path;
 
@@ -65,7 +69,7 @@ void atender_QueryControl(int fd){
 void atender_Worker(int fd){
     log_info(loggerMaster, "CONEXION EXITOSA CON WORKER");
     int id_worker;
-    void* buffer = recibir_buffer(buffer);
+    void* buffer = recibir_buffer(fd);
     memcpy(&id_worker, buffer, sizeof(int));
     free(buffer);
     log_info(loggerMaster,"Worker Conectado, ID : %d",id_worker);

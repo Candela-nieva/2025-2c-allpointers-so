@@ -7,6 +7,8 @@
 #include <sys/socket.h>
 #include <commons/log.h>
 #include <commons/config.h>
+#include <utils/chiches.h>
+
 typedef struct {
     char* modulo;
     char* puerto_escucha;
@@ -18,9 +20,10 @@ typedef struct {
 extern t_log* loggerMaster;
 extern t_config* config;
 extern t_config_master* config_struct; 
+extern char* config_master;
 
 // =================== MAIN Y BASIC =========================
-void inicializar_config(void);
+void inicializar_config();
 void crear_logger ();
 void cargar_config ();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
