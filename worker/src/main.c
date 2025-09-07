@@ -15,5 +15,6 @@ int main(int argc, char* argv[]) {
     pthread_create(&hilo_storage, NULL, iniciar_conexion_storage, NULL);
     pthread_create(&hilo_master, NULL, iniciar_conexion_master, id);
     pthread_join(hilo_master, NULL);
+    pthread_join(hilo_storage, NULL);
     return 0;
 }
