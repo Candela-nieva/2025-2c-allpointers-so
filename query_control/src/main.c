@@ -7,7 +7,7 @@ void iniciar_conexion_master(){
     if(socket_master == -1) {
         log_info(loggerQueryCTRL, "Error al crear la conexión con Query Control");
     }
-   // enviar_operacion(socket_master, HANDSHAKE_QUERY); // Enviar el handshake a Memoria
+    // enviar_operacion(socket_master, HANDSHAKE_QUERY);
     char* path_query = "aaaa";
     int prioridad = 1;
     t_paquete* pack = crear_paquete(HANDSHAKE_QUERY);

@@ -2,12 +2,11 @@
 
 int retardo_operacion;
 int retardo_acceso_bloque;
-char* config_storage;
 
 t_log* loggerStorage = NULL;
-t_config* config = NULL;
-t_config_storage* config_struct = NULL;
-char* config_storage = NULL;
+t_config *config = NULL;
+t_config_storage *config_struct = NULL;
+char* config_storage;
 
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_storage)); //Reserva memoria
@@ -37,7 +36,7 @@ void cargar_config() {
 // Función para iniciar el logger
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle){
 	t_log* nuevo_logger;
-	nuevo_logger = log_create( nombreArchivoLog, nombreLog, seMuestraEnConsola, nivelDetalle);
+	nuevo_logger = log_create(nombreArchivoLog, nombreLog, seMuestraEnConsola, nivelDetalle);
     if (nuevo_logger == NULL) {
 		perror("Error en el logger"); // Maneja error si no se puede crear el logger
 		exit(EXIT_FAILURE);
@@ -47,4 +46,24 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 
 void crear_logger () {
     loggerStorage=iniciar_logger("storage.log","STORAGE",true, log_level_from_string(config_struct->log_level));
+}
+
+void iniciar_servidor_multihilo(void)
+{
+    int fd_sv = crear_servidor(config_struct->puerto_escucha);
+    log_info(loggerStorage, "Servidor STORAGE escuchando en puerto %s", config_struct->puerto_escucha);
+    while (1)
+    {
+        int fd_conexion = esperar_cliente(fd_sv, "STORAGE", loggerStorage);
+        int operacion = recibir_operacion(fd_conexion);
+        if(operacion == HANDSHAKE_WORKER){
+            log_info(loggerStorage, "Conexion Exitosa con un nuevo Worker");
+            //pthread_t hilo_worker;
+            //pthread_create(&hilo_worker, NULL, atender_conexion, NULL);
+            //pthread_detach(hilo_worker);
+        }
+    }
+    // Nunca llega acá
+    close(fd_sv);
+    return;
 }

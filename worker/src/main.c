@@ -1,4 +1,4 @@
-#include <utils/hello.h>
+#include <utils/protocolo.h>
 #include "workerUtils.h"
 int main(int argc, char* argv[]) {
     saludar("worker");
@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) {
     int* id = malloc(sizeof(int));
     *id = 1/*worker_id*/;
     pthread_t hilo_storage, hilo_master;
-    //pthread_create(&hilo_storage, NULL, iniciar_conexion_storage, NULL);
+    pthread_create(&hilo_storage, NULL, iniciar_conexion_storage, NULL);
     pthread_create(&hilo_master, NULL, iniciar_conexion_master, id);
     pthread_join(hilo_master, NULL);
     return 0;

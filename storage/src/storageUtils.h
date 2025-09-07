@@ -2,13 +2,12 @@
 #define STORAGEUTILS_H
 
 #define TRUE 1
-#include <utils/hello.h>
+#include <utils/protocolo.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <commons/log.h>
 #include <commons/config.h>
 #include <utils/chiches.h>
-#include <utils/hello.h>
 
 typedef struct {
     char* modulo;
@@ -20,15 +19,15 @@ typedef struct {
     char* log_level;
 } t_config_storage;
 
-extern t_log* loggerMaster;
+extern t_log* loggerStorage;
 extern t_config* config;
-extern t_config_master* config_struct; 
+extern t_config_storage* config_struct; 
 extern char* config_storage;
 // =================== MAIN Y BASIC =========================
 void inicializar_config(void);
-void crear_logger ();
-void cargar_config ();
+void crear_logger();
+void cargar_config();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
-
+void iniciar_servidor_multihilo(void);
 
 #endif
