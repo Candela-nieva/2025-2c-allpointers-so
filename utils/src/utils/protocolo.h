@@ -29,7 +29,8 @@ typedef struct{
 typedef enum{
     HANDSHAKE_WORKER,
     HANDSHAKE_QUERY,
-    MENSAJE
+    MENSAJE,
+    ENVIAR_TAMANIO_BLOQUE,
 } op_code;
 
 void saludar(char* quien);

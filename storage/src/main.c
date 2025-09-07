@@ -6,6 +6,9 @@ int main(int argc, char* argv[]) {
     inicializar_config();
     cargar_config();
     crear_logger();
+
+    inicializar_montaje();
+
     iniciar_servidor_multihilo();
     return 0;
 }

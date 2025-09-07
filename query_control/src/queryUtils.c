@@ -8,7 +8,7 @@ char* config_queryCTRL = NULL;
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_queryctrl)); //Reserva memoria
     config_struct->modulo = NULL;
-    config_struct->ip = NULL;
+    config_struct->ip_master = NULL;
     config_struct->puerto_master = NULL;
     config_struct->log_level = NULL;
 }
@@ -25,9 +25,10 @@ void cargar_config() {
 
     config = config_create(config_queryCTRL);
     config_struct->modulo = config_get_string_value (config, "MODULO");
-    config_struct->ip = config_get_string_value (config, "IP_MASTER");
+    config_struct->ip_master = config_get_string_value (config, "IP_MASTER");
     config_struct->puerto_master = config_get_string_value(config, "PUERTO_MASTER");
     config_struct->log_level = config_get_string_value(config, "LOG_LEVEL");
+    
 }
 
 // Función para iniciar el logger

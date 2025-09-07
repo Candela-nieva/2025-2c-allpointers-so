@@ -74,5 +74,15 @@ void* iniciar_conexion_storage(void* arg){
         pthread_exit(NULL); // Terminar el hilo si hay un error
     }
     enviar_operacion(socket_storage, HANDSHAKE_WORKER); // Enviar el handshake a Memoria
+    //recibir tamanio de pags
+    int op = recibir_operacion(socket_storage);
+    if(op != ENVIAR_TAMANIO_BLOQUE)
+        log_info(loggerWorker, "ERROR AL RECIBIR COD DE OP, %d", op);
+    
+    int tamanio_pag;
+    void* buffer = recibir_buffer(socket_storage);
+    memcpy(&tamanio_pag, buffer, sizeof(int));
+    free(buffer);
+    log_info(loggerWorker, "Tamanio de Pag recibido de Storage: %d", tamanio_pag);
     return NULL; 
 }

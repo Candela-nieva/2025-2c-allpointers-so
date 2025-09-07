@@ -9,7 +9,7 @@
 #include <commons/config.h>
 typedef struct {
     char* modulo;
-    char* ip;
+    char* ip_master;
     char* puerto_master;
     char* log_level;
 } t_config_queryctrl;
