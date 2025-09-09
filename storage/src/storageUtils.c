@@ -28,7 +28,7 @@ void inicializar_config(void){
     config_superBlock->tam_bloq = NULL;
 }
 
-void inicializar_montaje(){
+void cargar_config_superBlock(){
     char ruta_completa[512];
     snprintf(ruta_completa, sizeof(ruta_completa), "%s%s", config_struct->punto_montaje, "/superblock.config");
     config_SB = config_create(ruta_completa);
@@ -37,6 +37,10 @@ void inicializar_montaje(){
     
     fs_size = atoi(config_superBlock->fs_size);
     tam_bloq = atoi(config_superBlock->tam_bloq);
+}
+
+void inicializar_montaje(){
+    cargar_config_superBlock();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
 }
 

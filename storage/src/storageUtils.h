@@ -30,6 +30,7 @@ extern t_config* config_SB;
 extern t_config_storage* config_struct; 
 extern t_config_superblock* config_superBlock;
 extern char* config_storage;
+extern t_dictionary* diccionario_qcb;
 // =================== MAIN Y BASIC =========================
 void inicializar_config(void);
 void crear_logger();
@@ -37,5 +38,5 @@ void cargar_config();
 void inicializar_montaje();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
 void iniciar_servidor_multihilo(void);
-
+void cargar_config_superBlock();
 #endif
