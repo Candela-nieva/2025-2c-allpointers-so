@@ -7,8 +7,12 @@
 #include <sys/socket.h>
 #include <commons/log.h>
 #include <commons/config.h>
+#include <semaphore.h>
+#include <stdbool.h>
 #include <utils/chiches.h>
 #include <commons/collections/dictionary.h>
+#include <commons/collections/list.h>
+#include <commons/collections/queue.h>
 
 typedef struct {
     char* modulo;
@@ -31,6 +35,13 @@ typedef struct {
     int prioridad;
 } t_qcb;
 
+typedef struct {
+    int wid;
+    bool esta_libre;
+    int qid_asig;
+    int socket;
+} t_wcb;
+
 extern t_log* loggerMaster;
 extern t_config* config;
 extern t_config_master* config_struct; 
@@ -38,6 +49,10 @@ extern char* config_master;
 extern int cant_workers;
 extern t_dictionary* diccionario_qcb;
 extern int qid;
+/*
+extern t_list* cola_ready;
+extern t_list* cola_exec;
+extern t_list* cola_exit;*/
 // =================== MAIN Y BASIC =========================
 void inicializar_master();
 void inicializar_config();
@@ -50,5 +65,17 @@ void* atender_conexion(void* arg);
 void atender_QueryControl(int fd);
 void atender_Worker(int fd);
 void* inicializar_servidor_multihilo(void* arg);
+void inicializar_semaforos();
+void inicializar_listas();
+
+void agregar_a_ready(t_qcb* qcb);
+void agregar_a_exec(t_qcb* qcb);
+void agregar_a_exit(t_qcb* qcb);
+
+// =================== PLANIFICADOR =========================
 void* inicializar_planificador(void* arg);
+void planificador_fifo();
+
+void crear_wcb (int id, int socket);
+
 #endif
