@@ -7,21 +7,48 @@ t_config_master* config_struct = NULL;
 char* config_master = NULL;
 int cant_workers = 0;
 int qid = 0;
+
+t_list* cola_ready;
+t_list* cola_exec;
+t_list* cola_exit;
+
+pthread_mutex_t mutex_cant_workers;
+pthread_mutex_t mutex_qid;
+pthread_mutex_t mutex_diccionario_qcb;
+pthread_mutex_t mutex_cola_ready;
+pthread_mutex_t mutex_cola_exec;
+pthread_mutex_t mutex_cola_exit;
+
+sem_t hay_worker_libre;
+sem_t hay_en_Ready;
+sem_t hay_en_Exit;
+sem_t hay_en_Exec;
+
 t_dictionary *diccionario_qcb = NULL;
+t_dictionary *diccionario_Workers = NULL;
+
 
 void inicializar_master() {
     //HILO AGING ?
     inicializar_config();
-    //si creamos diccionario en esta linea explota
+    inicializar_semaforos();
+    //si creamos diccionario en esta linea explot a
     cargar_config();
     crear_logger();
-
-    pthread_t hilo_planificador, hilo_servidor;
-    pthread_create(&hilo_servidor, NULL, inicializar_servidor_multihilo, NULL);
-    pthread_detach(hilo_servidor);
-    pthread_create(&hilo_planificador, NULL, inicializar_planificador, NULL);
-    pthread_join(hilo_planificador, NULL);
     
+    pthread_t hilo_planificador, hilo_servidor;
+    pthread_create(&hilo_planificador, NULL, inicializar_planificador, NULL);
+    pthread_detach(hilo_planificador);
+    pthread_create(&hilo_servidor, NULL, inicializar_servidor_multihilo, NULL);
+    pthread_join(hilo_servidor, NULL);
+    
+    
+}
+
+void inicializar_listas() {
+    cola_ready = list_create();
+    cola_exec = list_create();
+    cola_exit = list_create();
 }
 
 void inicializar_config(void){
@@ -32,10 +59,26 @@ void inicializar_config(void){
     config_struct->tiempo_aging = NULL;
     config_struct->log_level = NULL;
     inicializar_diccionario();
+    inicializar_listas();
 }
 
 void inicializar_diccionario() {
     diccionario_qcb = dictionary_create();
+    diccionario_Workers = dictionary_create();
+}
+
+void inicializar_semaforos() {
+    sem_init(&hay_en_Ready, 0, 0);
+    sem_init(&hay_en_Exec, 0, 0);
+    sem_init(&hay_en_Exit, 0, 0);
+    sem_init(&hay_worker_libre, 0, 0);
+
+    pthread_mutex_init(&mutex_cant_workers, NULL);
+    pthread_mutex_init(&mutex_qid, NULL);
+    pthread_mutex_init(&mutex_diccionario_qcb, NULL);
+    pthread_mutex_init(&mutex_cola_ready, NULL);
+    pthread_mutex_init(&mutex_cola_exec, NULL);
+    pthread_mutex_init(&mutex_cola_exit, NULL);
 }
 
 void cargar_config() {
@@ -82,18 +125,24 @@ void atender_QueryControl(int fd){
 
     t_qcb* qcb = crear_query_control(path_query, prioridad);
     log_info(loggerMaster, "## Se conecta un Query Control para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>. Nivel multiprocesamiento <%d>", path_query, prioridad, qcb->qid, cant_workers);
+    agregar_a_ready(qcb);
+    sem_post(&hay_en_Ready);
 }
 
 void atender_Worker(int fd){
-    //mutex_lock(&mutex_cant_workers);
+    pthread_mutex_lock(&mutex_cant_workers);
     ++cant_workers;
-    //mutex_unlock(&mutex_cant_workers);
+    pthread_mutex_unlock(&mutex_cant_workers);
     log_info(loggerMaster, "CONEXION EXITOSA CON WORKER");
     int id_worker;
     void* buffer = recibir_buffer(fd);
     memcpy(&id_worker, buffer, sizeof(int));
     free(buffer);
     log_info(loggerMaster,"## Se conecta el Worker <%d> - Cantidad total de Workers: <%d>",id_worker, cant_workers);
+    //COMO MANEJAMOS LOS SOCKETS??
+    crear_wcb(id_worker, fd);
+
+    sem_post(&hay_worker_libre);
 }
 
 void* atender_conexion(void* arg){
@@ -132,19 +181,22 @@ void* inicializar_servidor_multihilo(void* arg) {
 }
 
 t_qcb* crear_query_control(char* path, int prioridad){
-    //mutex_lock(&mutex_qid);
+    pthread_mutex_lock(&mutex_qid);
     qid++;
-    //mutex_unlock(&mutex_qid);
+    pthread_mutex_unlock(&mutex_qid);
     t_qcb* qcb = malloc(sizeof(t_qcb));
     qcb->qid = qid;
     qcb->estado = READY;
     qcb->ruta_arch = path;
     qcb->prioridad = prioridad;
-    //mutex_lock(&mutex_diccionario_qcb);
+
     char key[16];
     sprintf(key, "%d", qcb->qid); //escribe el valor del pid en la key
+    
+    pthread_mutex_lock(&mutex_diccionario_qcb);
     dictionary_put(diccionario_qcb, strdup(key), qcb);
-    //mutex_unlock(&mutex_diccionario_qcb);
+    pthread_mutex_unlock(&mutex_diccionario_qcb);
+    
     //free(key);
     return qcb;
 }
@@ -152,8 +204,46 @@ t_qcb* crear_query_control(char* path, int prioridad){
 void* inicializar_planificador(void* arg){
     log_info(loggerMaster, "Planificador %s", config_struct->algoritmo_planificacion);
     if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
-        //planificador_fifo();
+        planificador_fifo();
     } else if (strcmp(config_struct->algoritmo_planificacion, "PRIORIDADES") == 0){
         //planificador_prioridades();
     }
+}
+
+void planificador_fifo(){
+    //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
+    while(true){
+        sem_wait(&hay_en_Ready);
+        log_info(loggerMaster, "Hay proceso en READY");
+        sem_wait(&hay_worker_libre);
+        t_qcb* qcb_exec = list_get(cola_ready,0);
+        log_info(loggerMaster, "se Encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
+    }
+}
+
+void crear_wcb(int id, int socket) {
+    t_wcb* wcb = malloc (sizeof(t_wcb));
+    wcb->wid = id;
+    wcb->esta_libre = true;
+    wcb->qid_asig = -1; //-1 si no tiene query asignada
+    wcb->socket = socket;
+    char key[16];
+    sprintf(key, "%d", wcb->wid);
+    dictionary_put(diccionario_Workers, strdup(key), wcb);
+}
+
+void agregar_a_ready(t_qcb* qcb){
+    pthread_mutex_lock(&mutex_cola_ready);
+    list_add(cola_ready, qcb);
+    pthread_mutex_unlock(&mutex_cola_ready);
+}
+void agregar_a_exec(t_qcb* qcb){
+    pthread_mutex_lock(&mutex_cola_exec);
+    list_add(cola_ready, qcb);
+    pthread_mutex_unlock(&mutex_cola_exec);
+}
+void agregar_a_exit(t_qcb* qcb){
+    pthread_mutex_lock(&mutex_cola_exit);
+    list_add(cola_ready, qcb);
+    pthread_mutex_unlock(&mutex_cola_exit);
 }
