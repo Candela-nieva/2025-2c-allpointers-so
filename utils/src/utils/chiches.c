@@ -58,7 +58,7 @@ int esperar_cliente (int fd_escucha, char* cliente_nombre, t_log* logger) {
 }
 
 // Función para terminar el programa y liberar recursos
-void terminar_programa(int conexion, t_log* logger, t_config* config, t) {
+void terminar_programa(int conexion, t_log* logger, t_config* config) {
     if (conexion != -1) {
         close(conexion);
     }

@@ -40,7 +40,7 @@ Tenemos que implementar una funcion de escucha de mensajes del master y logearlo
 en el formato correcto 
 */
 
-void escuchar_master(int socket_master) {
+/*void escuchar_master(int socket_master) {
     while(1) {
         t_paquete* paquete = recibir_paquete(socket_master);
         if(paquete == NULL) {
@@ -49,7 +49,8 @@ void escuchar_master(int socket_master) {
         }
         
         switch(paquete->cod_op) {
-            case 100 /*MENSAJE DE LECTURA*/: {
+            //MENSAJE DE READ
+            case 100: {
                 char* file_tag = recibir_string(paquete); // extrer string del paquete
                 char* contenido = recibir_string(paquete); // extraer string del paquete
                 log_info(loggerQueryCTRL, "## Lectura realizada: Archivo %s, contenido: %s", file_tag, contenido);
@@ -58,7 +59,8 @@ void escuchar_master(int socket_master) {
                 break;
             }
 
-            case 101 /*MENSAJE FIN_QUERY*/: {
+            //MENSAJE FIN_QUERY
+            case 101: {
                 char* motivo = recibir_string(paquete); // extraer string del paquete
                 log_info(loggerQueryCTRL, "## Query Finalizada - %s", motivo);
                 free(motivo);
@@ -73,7 +75,7 @@ void escuchar_master(int socket_master) {
         }
         eliminar_paquete(paquete);
     }
-}
+}*/
 
 int main(int argc, char* argv[]) {
     
