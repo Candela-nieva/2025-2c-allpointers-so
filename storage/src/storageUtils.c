@@ -36,6 +36,8 @@ void cargar_config_superBlock(){
     config_superBlock->tam_bloq = config_get_string_value(config_SB, "BLOCK_SIZE");
     
     fs_size = atoi(config_superBlock->fs_size);
+        printf("llegamos a despues");
+
     tam_bloq = atoi(config_superBlock->tam_bloq);
 }
 
