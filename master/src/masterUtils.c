@@ -183,24 +183,22 @@ void* inicializar_servidor_multihilo(void* arg) {
 }
 
 t_qcb* crear_query_control(char* path, int prioridad){
-    pthread_mutex_lock(&mutex_qid);
-    qid++;
-    pthread_mutex_unlock(&mutex_qid);
     t_qcb* qcb = malloc(sizeof(t_qcb));
     qcb->qid = qid;
     qcb->pc = 0; //program counter
     qcb->estado = READY;
     qcb->ruta_arch = path;
     qcb->prioridad = prioridad;
-
-    char key[16];
-    sprintf(key, "%d", qcb->qid); //escribe el valor del pid en la key
-    
+    pthread_mutex_lock(&mutex_qid);
+    qid++;
+    pthread_mutex_unlock(&mutex_qid);
+    char *key = malloc(2);
+    sprintf(key, "%d",qcb->qid);
+    log_info(loggerMaster, "SE GUARDO LA LLAVE %s",key);
     pthread_mutex_lock(&mutex_diccionario_qcb);
-    dictionary_put(diccionario_qcb, strdup(key), qcb);
+    dictionary_put(diccionario_qcb, key, qcb);
     pthread_mutex_unlock(&mutex_diccionario_qcb);
     
-    //free(key);
     return qcb;
 }
 
@@ -211,6 +209,7 @@ void* inicializar_planificador(void* arg){
     } else if (strcmp(config_struct->algoritmo_planificacion, "PRIORIDADES") == 0){
         //planificador_prioridades();
     }
+    return NULL;
 }
 
 void planificador_fifo(){
@@ -230,10 +229,7 @@ void planificador_fifo(){
 void mandar_a_ejecutar(t_qcb* qcb) {
     //BUSCAR UN WORKER LIBRE
     //MANDARLE LA QUERY
-    log_info(loggerMaster, "Mandando a ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb->ruta_arch, qcb->prioridad, qcb->qid);
-    t_paquete* paquete = crear_paquete(EJECUTAR);
-    agregar_a_paquete(paquete, &(qcb->pc), sizeof(int));
-    agregar_a_paquete_string(paquete, qcb->ruta_arch, strlen(qcb->ruta_arch));
+    
     t_wcb* worker = buscar_worker_libre();
     // Control formal por si no hay workers libres (no deberia pasar)
     if(worker == NULL){
@@ -245,7 +241,12 @@ void mandar_a_ejecutar(t_qcb* qcb) {
     worker->esta_libre = false;
     worker->qid_asig = qcb->qid;
     pthread_mutex_unlock(&worker->mutex_wcb);
+    log_info(loggerMaster, "Mandando a ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>, Al worker %d", qcb->ruta_arch, qcb->prioridad, qcb->qid,worker->wid);
+    t_paquete* paquete = crear_paquete(EJECUTAR);
+    agregar_a_paquete(paquete, &(qcb->pc), sizeof(int));
+    agregar_a_paquete_string(paquete, qcb->ruta_arch, strlen(qcb->ruta_arch));
     enviar_paquete(paquete, worker->socket);
+
     eliminar_paquete(paquete);
 }    
 

@@ -63,6 +63,7 @@ void* iniciar_conexion_master(void* arg){
     t_paquete* paquete = crear_paquete(HANDSHAKE_WORKER);
     agregar_a_paquete(paquete, &id_worker, sizeof(int));
     enviar_paquete(paquete, socket_master);
+    eliminar_paquete(paquete);
     log_info(loggerWorker, "Handshake con Master - Worker ID enviado: %d", id_worker);
     esperar_queries();
     return NULL;
@@ -85,7 +86,9 @@ void esperar_queries(){
     archivo = malloc(tamarch + 1);
     memcpy(archivo, buffer + offset, tamarch);
     archivo[tamarch] = '\0';
+    free(buffer);
     log_info(loggerWorker, "Se recibio el PC %d correspondiente al archivo con path %s", pc, archivo);
+    free(archivo);
 }
 
 void* iniciar_conexion_storage(void* arg){ 
