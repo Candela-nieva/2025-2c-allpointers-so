@@ -64,7 +64,7 @@ void* iniciar_conexion_master(void* arg){
     agregar_a_paquete(paquete, &id_worker, sizeof(int));
     enviar_paquete(paquete, socket_master);
     eliminar_paquete(paquete);
-    log_info(loggerWorker, "Handshake con Master - Worker ID enviado: %d", id_worker);
+    log_info(loggerWorker, "Handshake enviado a Master - Worker ID enviado: %d", id_worker);
     esperar_queries();
     return NULL;
 }

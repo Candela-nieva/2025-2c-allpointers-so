@@ -34,6 +34,7 @@ typedef struct {
     t_estado estado;
     char* ruta_arch;
     int prioridad;
+    pthread_mutex_t mutex_qcb;
 } t_qcb;
 
 typedef struct {
@@ -77,8 +78,16 @@ void agregar_a_exit(t_qcb* qcb);
 // =================== PLANIFICADOR =========================
 void* inicializar_planificador(void* arg);
 void planificador_fifo();
+void planificador_prioridades();
+void *planificar_exit(void *arg);
 void mandar_a_ejecutar(t_qcb* qcb);
 t_wcb* buscar_worker_libre();
 void crear_wcb (int id, int socket);
+t_qcb* buscar_qcb_mayor_prio();
+t_wcb* buscar_qcb_menor_prio();
+
+// =================== EXIT =========================
+void eliminar_qcb_diccionario(int qid);
+void eliminar_qcb(void* element);
 
 #endif

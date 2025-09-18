@@ -28,7 +28,6 @@ sem_t hay_en_Exec;
 t_dictionary *diccionario_qcb = NULL;
 //t_dictionary *diccionario_Workers = NULL;
 
-
 void inicializar_master() {
     //HILO AGING ?
     inicializar_config();
@@ -36,10 +35,16 @@ void inicializar_master() {
     //si creamos diccionario en esta linea explot a
     cargar_config();
     crear_logger();
-    
-    pthread_t hilo_planificador, hilo_servidor;
+
+    t_qcb *qcb1 = crear_query_control("path1", 5);
+    t_qcb *qcb2 = crear_query_control("path2", 3);
+    agregar_a_ready(qcb1);
+    agregar_a_ready(qcb2);
+    pthread_t hilo_planificador, hilo_servidor, hilo_exit;
     pthread_create(&hilo_planificador, NULL, inicializar_planificador, NULL);
     pthread_detach(hilo_planificador);
+    pthread_create(&hilo_exit, NULL, planificar_exit, NULL);
+    pthread_detach(hilo_exit);
     pthread_create(&hilo_servidor, NULL, inicializar_servidor_multihilo, NULL);
     pthread_join(hilo_servidor, NULL);
     
@@ -189,17 +194,46 @@ t_qcb* crear_query_control(char* path, int prioridad){
     qcb->estado = READY;
     qcb->ruta_arch = path;
     qcb->prioridad = prioridad;
+    pthread_mutex_init(&(qcb->mutex_qcb), NULL);
+    
     pthread_mutex_lock(&mutex_qid);
     qid++;
     pthread_mutex_unlock(&mutex_qid);
-    char *key = malloc(2);
+    char *key = malloc(sizeof(int));
     sprintf(key, "%d",qcb->qid);
     log_info(loggerMaster, "SE GUARDO LA LLAVE %s",key);
     pthread_mutex_lock(&mutex_diccionario_qcb);
-    dictionary_put(diccionario_qcb, key, qcb);
+    dictionary_put(diccionario_qcb, strdup(key), qcb);
     pthread_mutex_unlock(&mutex_diccionario_qcb);
-    
+    free(key);
     return qcb;
+}
+
+void* planificar_exit(void *arg){
+    log_info(loggerMaster, "Hilo exit esperando queries a eliminar");
+    while(true){
+        sem_wait(&hay_en_Exit);
+        t_qcb *qcb_elim = list_remove(cola_exit,0);
+        log_info(loggerMaster, "Query en Exit - ID asignado <%d>",qcb_elim->qid);
+        eliminar_qcb_diccionario(qcb_elim->qid);
+        //eliminar_qcb(qcb_elim);
+    }
+    return NULL;
+}
+
+void eliminar_qcb_diccionario(int qid) {
+    char* key = malloc(sizeof(int));
+    sprintf(key, "%d",  qid);
+    pthread_mutex_lock(&mutex_diccionario_qcb);
+    dictionary_remove_and_destroy(diccionario_qcb, key, free);
+    pthread_mutex_unlock(&mutex_diccionario_qcb);
+    free(key);
+}
+
+void eliminar_qcb(void* element){
+    t_qcb* qcb = (t_qcb*) element;
+    free(qcb->ruta_arch);
+    free(qcb);
 }
 
 void* inicializar_planificador(void* arg){
@@ -207,7 +241,7 @@ void* inicializar_planificador(void* arg){
     if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
         planificador_fifo();
     } else if (strcmp(config_struct->algoritmo_planificacion, "PRIORIDADES") == 0){
-        //planificador_prioridades();
+        planificador_prioridades();
     }
     return NULL;
 }
@@ -217,7 +251,7 @@ void planificador_fifo(){
     while(true){
         sem_wait(&hay_en_Ready);
         log_info(loggerMaster, "Hay proceso en READY");
-        sem_wait(&hay_worker_libre);
+        //sem_wait(&hay_worker_libre);
         t_qcb* qcb_exec = list_get(cola_ready,0);
         log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
         agregar_a_exec(qcb_exec);
@@ -225,6 +259,59 @@ void planificador_fifo(){
     }
 }
 
+void planificador_prioridades(){
+    //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
+    while(true){
+        sem_wait(&hay_en_Ready);
+        log_info(loggerMaster, "Hay proceso en READY");
+        //sem_wait(&hay_worker_libre);
+        t_qcb* qcb_exec = buscar_qcb_mayor_prio();
+        
+        log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
+        agregar_a_exec(qcb_exec);
+        //mandar_a_ejecutar(qcb_exec);
+    }
+}
+
+void* hilo_aging(void* arg){
+    t_qcb* qcb = (t_qcb*) arg;
+    while(qcb->estado == READY && qcb->prioridad > 0){
+        usleep(tiempo_aging * 1000);
+        pthread_mutex_lock(&(qcb->mutex_qcb));
+        qcb->prioridad -= 1;
+        pthread_mutex_unlock(&(qcb->mutex_qcb));
+        log_info(loggerMaster, "Aging aplicado a la Query <%s> - Id asignado: <%d>. Nueva prioridad <%d>", qcb->ruta_arch, qcb->qid, qcb->prioridad);
+    }
+    return NULL;
+}
+
+t_qcb* buscar_qcb_mayor_prio(){
+    t_qcb* qcb_prio = list_get(cola_ready,0);
+    for(int i = 1; i < list_size(cola_ready); i++){
+        t_qcb* qcb_actual = list_get(cola_ready,i);
+        if(qcb_prio->prioridad > qcb_actual->prioridad){
+            qcb_prio = qcb_actual;
+        }
+    }
+    pthread_mutex_lock(&mutex_cola_ready);
+    list_remove_element (cola_ready, qcb_prio);
+    pthread_mutex_unlock(&mutex_cola_ready);
+    return qcb_prio;
+}
+/*
+t_wcb* buscar_qcb_menor_prio() {
+    t_wcb* wcb_prio = list_get(lista_workers,0);
+    t_qcb* qcb_prio = dictionary_get(diccionario_qcb, wcb_prio->qid_asig);
+    for(int i = 1; i < list_size(lista_workers); i++){
+        t_wcb* wcb_actual = list_get(lista_workers,i);
+        t_qcb* qcb_actual = dictionary_get(diccionario_qcb, wcb_actual->qid_asig);
+        if(qcb_prio->prioridad < qcb_actual->prioridad){
+            wcb_prio = wcb_actual;
+            qcb_prio = qcb_actual;
+        }
+    }
+    return wcb_prio;
+}*/
 
 void mandar_a_ejecutar(t_qcb* qcb) {
     //BUSCAR UN WORKER LIBRE
@@ -259,7 +346,7 @@ t_wcb *buscar_worker_libre(){
     }
     return NULL;
 }
-
+//comentario de prueba
 void crear_wcb(int id, int socket) {
     t_wcb* wcb = malloc (sizeof(t_wcb));
     wcb->wid = id;
@@ -277,14 +364,20 @@ void agregar_a_ready(t_qcb* qcb){
     pthread_mutex_lock(&mutex_cola_ready);
     list_add(cola_ready, qcb);
     pthread_mutex_unlock(&mutex_cola_ready);
+
+    if(strcmp(config_struct->algoritmo_planificacion, "PRIORIDADES") == 0) {
+        pthread_t hilo_age;
+        pthread_create(&hilo_age, NULL, hilo_aging, (void*)qcb);
+        pthread_detach(hilo_age);
+    }
 }
 void agregar_a_exec(t_qcb* qcb){
     pthread_mutex_lock(&mutex_cola_exec);
-    list_add(cola_ready, qcb);
+    list_add(cola_exec, qcb);
     pthread_mutex_unlock(&mutex_cola_exec);
 }
 void agregar_a_exit(t_qcb* qcb){
     pthread_mutex_lock(&mutex_cola_exit);
-    list_add(cola_ready, qcb);
+    list_add(cola_exit, qcb);
     pthread_mutex_unlock(&mutex_cola_exit);
 }
