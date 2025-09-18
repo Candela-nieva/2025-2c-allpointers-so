@@ -1,9 +1,41 @@
 #include "queryUtils.h"
 
-char* config_queryCTRL = NULL;
+char* config_queryCTRL;
 t_log* loggerQueryCTRL = NULL;
 t_config* config = NULL;
 t_config_queryctrl* config_struct = NULL;
+
+
+void iniciar_conexion_master(char* path_query, int prioridad) {
+    int socket_master = crear_conexion(config_struct->ip_master, config_struct->puerto_master);
+    
+    if(socket_master == -1) {
+        log_info(loggerQueryCTRL, "Error al crear la conexión con Query Control"); // LOG INFO NO OBLIGATORIO
+        exit(EXIT_FAILURE);
+    }
+
+    log_info(loggerQueryCTRL, "## Conexión al Master exitosa. IP: %s, Puerto: %s", 
+        config_struct->ip_master, config_struct->puerto_master); // LOG INFO OBLIGATORIO
+        
+    // Armamos paquete de handshake con path_query y prioridad    
+    // enviar_operacion(socket_master, HANDSHAKE_QUERY);
+    
+    t_paquete* pack = crear_paquete(HANDSHAKE_QUERY);
+    agregar_a_paquete_string(pack, path_query, strlen(path_query));
+    agregar_a_paquete(pack, &prioridad, sizeof(int));
+    enviar_paquete(pack, socket_master);
+
+    log_info(loggerQueryCTRL, "## Solicitud de ejecución de Query: %s, prioridad: %d", 
+        path_query, prioridad); // LOG INFO OBLIGATORIO
+
+    eliminar_paquete(pack);
+
+    //escuchar_master(socket_master);
+
+    // Cierre ordenado si por ahora terminamos después del handshake:
+    //close(socket_master);
+    //log_info(loggerQueryCTRL, "## Query Finalizada - OK");
+}
 
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_queryctrl)); //Reserva memoria
@@ -31,13 +63,13 @@ void cargar_config() {
 
     if(!config_queryCTRL){
         log_info(loggerQueryCTRL, "Ruta de config no establecida\n");
-        return false;
+        return;
     }
 
     config = config_create(config_queryCTRL);
     if(!config){
         log_info(loggerQueryCTRL, "No se pudo abrir el archivo de config: %s\n", config_queryCTRL);
-        return false;
+        return;
     }
 
     config_struct->modulo = config_get_string_value (config, "MODULO");
@@ -50,7 +82,7 @@ void cargar_config() {
 // Función para iniciar el logger
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle){
 	t_log* nuevo_logger;
-	nuevo_logger = log_create( nombreArchivoLog, nombreLog, seMuestraEnConsola, nivelDetalle);
+	nuevo_logger = log_create(nombreArchivoLog, nombreLog, seMuestraEnConsola, nivelDetalle);
     if (nuevo_logger == NULL) {
 		perror("Error en el logger"); // Maneja error si no se puede crear el logger
 		exit(EXIT_FAILURE);
@@ -59,5 +91,5 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 }
 
 void crear_logger () {
-    loggerQueryCTRL=iniciar_logger("queryControl.log","QUERYCTRL",true, log_level_from_string(config_struct->log_level));
+    loggerQueryCTRL=iniciar_logger("queryControl.log", "QUERYCTRL", true, log_level_from_string(config_struct->log_level));
 }

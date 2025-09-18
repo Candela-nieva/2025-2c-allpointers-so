@@ -1,38 +1,5 @@
 
 #include "queryUtils.h"
-//void iniciar_conexion_master();
-
-void iniciar_conexion_master(char* path_query, int prioridad) {
-    int socket_master = crear_conexion(config_struct->ip_master, config_struct->puerto_master);
-    
-    if(socket_master == -1) {
-        log_info(loggerQueryCTRL, "Error al crear la conexión con Query Control"); // LOG INFO NO OBLIGATORIO
-        exit(EXIT_FAILURE);
-    }
-
-    log_info(loggerQueryCTRL, "## Conexión al Master exitosa. IP: %s, Puerto: %s", 
-        config_struct->ip_master, config_struct->puerto_master); // LOG INFO OBLIGATORIO
-        
-    // Armamos paquete de handshake con path_query y prioridad    
-    // enviar_operacion(socket_master, HANDSHAKE_QUERY);
-    
-    t_paquete* pack = crear_paquete(HANDSHAKE_QUERY);
-    agregar_a_paquete_string(pack, path_query, strlen(path_query) + 1);
-    agregar_a_paquete(pack, &prioridad, sizeof(int));
-    enviar_paquete(pack, socket_master);
-
-    log_info(loggerQueryCTRL, "## Solicitud de ejecución de Query: %s, prioridad: %d", 
-        path_query, prioridad); // LOG INFO OBLIGATORIO
-
-    eliminar_paquete(pack);
-
-    //escuchar_master(socket_master);
-
-    // Cierre ordenado si por ahora terminamos después del handshake:
-    //close(socket_master);
-    //log_info(loggerQueryCTRL, "## Query Finalizada - OK");
-}
-
 
 // TODO:
 /*
@@ -80,19 +47,25 @@ en el formato correcto
 int main(int argc, char* argv[]) {
     
     // Luego cuando resivamos los parametros sin hardcodear usamos esto de aca abajo, DESCOMENTAR LUEGO :)
-    if(argc < 4) {
+    saludar("query_control");
+    config_queryCTRL = "query.config";
+    inicializar_config();
+    cargar_config();
+    crear_logger();
+    
+    /*if(argc < 4) {
         log_info(loggerQueryCTRL, "Uso: %s <archivo_config> <archivo_query> <prioridad>\n", argv[0]);
         //fprintf(stderr, "Uso: %s <archivo_config> <archivo_query> <prioridad>\n", argv[0]);
         return EXIT_FAILURE;
-    }
+    }*/
 
-    saludar("query_control");
-
+    char* path_query = "aaaaa";
+    int prioridad = 1;
     // Parametros de entrada
-    config_queryCTRL = argv[1];
+    /*config_queryCTRL = argv[1];
     char* path_query = argv[2];
     int prioridad = atoi(argv[3]);
-    
+    */
     if(prioridad < 0){
         log_info(loggerQueryCTRL, "Prioridad invalida: %s\n", argv[3]);
         return EXIT_FAILURE;
@@ -100,13 +73,12 @@ int main(int argc, char* argv[]) {
     
     //config_queryCTRL = "query.config";
     
-    // DUDA: tenemos que pasar el archivo de configuracion por parametro?
+    // DUDA: tenemos que pasar el archivo de configuracion por parametro? SI
     // Si es asi, como lo hacemos? Lo pasamos por linea de comando?
     // En ese caso, al cargar la config, usamos config_queryCTRL en vez de "query.config"
 
-    inicializar_config();
-    cargar_config();
-    crear_logger();
+    
+    
     
     iniciar_conexion_master(path_query, prioridad);
     
@@ -114,7 +86,7 @@ int main(int argc, char* argv[]) {
     if(loggerQueryCTRL){ log_destroy(loggerQueryCTRL); loggerQueryCTRL = NULL; }
     if(config){ config_destroy(config); config = NULL; }
     if(config_struct){ free(config_struct); config_struct = NULL; }
-   
+
     return 0;
 }
 

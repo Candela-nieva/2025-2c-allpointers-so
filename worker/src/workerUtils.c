@@ -64,7 +64,28 @@ void* iniciar_conexion_master(void* arg){
     agregar_a_paquete(paquete, &id_worker, sizeof(int));
     enviar_paquete(paquete, socket_master);
     log_info(loggerWorker, "Handshake con Master - Worker ID enviado: %d", id_worker);
+    esperar_queries();
     return NULL;
+}
+
+void esperar_queries(){
+    int cod_op = recibir_operacion(socket_master);
+    if(cod_op != EJECUTAR){
+        log_info(loggerWorker, "Error al recibir cod_op de Master, se esperaba EJECUTAR");
+        return;
+    }
+    int offset = 0;
+    int pc, tamarch;
+    char *archivo;
+    void *buffer = recibir_buffer(socket_master);
+    memcpy(&(pc), buffer, sizeof(int));
+    offset += sizeof(int);
+    memcpy(&(tamarch), buffer + offset, sizeof(int));
+    offset += sizeof(int);
+    archivo = malloc(tamarch + 1);
+    memcpy(archivo, buffer + offset, tamarch);
+    archivo[tamarch] = '\0';
+    log_info(loggerWorker, "Se recibio el PC %d correspondiente al archivo con path %s", pc, archivo);
 }
 
 void* iniciar_conexion_storage(void* arg){ 

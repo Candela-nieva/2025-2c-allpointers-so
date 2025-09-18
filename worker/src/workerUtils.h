@@ -33,4 +33,5 @@ void cargar_config ();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
 void* iniciar_conexion_storage(void* arg);
 void* iniciar_conexion_master(void* arg);
+void esperar_queries();
 #endif

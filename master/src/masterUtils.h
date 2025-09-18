@@ -30,6 +30,7 @@ typedef enum {
 
 typedef struct {
     int qid;
+    int pc;
     t_estado estado;
     char* ruta_arch;
     int prioridad;
@@ -40,6 +41,7 @@ typedef struct {
     bool esta_libre;
     int qid_asig;
     int socket;
+    pthread_mutex_t mutex_wcb;
 } t_wcb;
 
 extern t_log* loggerMaster;
@@ -75,7 +77,8 @@ void agregar_a_exit(t_qcb* qcb);
 // =================== PLANIFICADOR =========================
 void* inicializar_planificador(void* arg);
 void planificador_fifo();
-
+void mandar_a_ejecutar(t_qcb* qcb);
+t_wcb* buscar_worker_libre();
 void crear_wcb (int id, int socket);
 
 #endif

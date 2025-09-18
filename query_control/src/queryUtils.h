@@ -23,6 +23,6 @@ void inicializar_config(void);
 void crear_logger ();
 void cargar_config ();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
-
+void iniciar_conexion_master(char* path_query, int prioridad);
 
 #endif

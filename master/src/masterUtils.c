@@ -11,6 +11,7 @@ int qid = 0;
 t_list* cola_ready;
 t_list* cola_exec;
 t_list* cola_exit;
+t_list* lista_workers;
 
 pthread_mutex_t mutex_cant_workers;
 pthread_mutex_t mutex_qid;
@@ -25,7 +26,7 @@ sem_t hay_en_Exit;
 sem_t hay_en_Exec;
 
 t_dictionary *diccionario_qcb = NULL;
-t_dictionary *diccionario_Workers = NULL;
+//t_dictionary *diccionario_Workers = NULL;
 
 
 void inicializar_master() {
@@ -49,6 +50,7 @@ void inicializar_listas() {
     cola_ready = list_create();
     cola_exec = list_create();
     cola_exit = list_create();
+    lista_workers = list_create();
 }
 
 void inicializar_config(void){
@@ -64,7 +66,7 @@ void inicializar_config(void){
 
 void inicializar_diccionario() {
     diccionario_qcb = dictionary_create();
-    diccionario_Workers = dictionary_create();
+    //diccionario_Workers = dictionary_create();
 }
 
 void inicializar_semaforos() {
@@ -186,6 +188,7 @@ t_qcb* crear_query_control(char* path, int prioridad){
     pthread_mutex_unlock(&mutex_qid);
     t_qcb* qcb = malloc(sizeof(t_qcb));
     qcb->qid = qid;
+    qcb->pc = 0; //program counter
     qcb->estado = READY;
     qcb->ruta_arch = path;
     qcb->prioridad = prioridad;
@@ -217,8 +220,43 @@ void planificador_fifo(){
         log_info(loggerMaster, "Hay proceso en READY");
         sem_wait(&hay_worker_libre);
         t_qcb* qcb_exec = list_get(cola_ready,0);
-        log_info(loggerMaster, "se Encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
+        log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
+        agregar_a_exec(qcb_exec);
+        mandar_a_ejecutar(qcb_exec);
     }
+}
+
+
+void mandar_a_ejecutar(t_qcb* qcb) {
+    //BUSCAR UN WORKER LIBRE
+    //MANDARLE LA QUERY
+    log_info(loggerMaster, "Mandando a ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb->ruta_arch, qcb->prioridad, qcb->qid);
+    t_paquete* paquete = crear_paquete(EJECUTAR);
+    agregar_a_paquete(paquete, &(qcb->pc), sizeof(int));
+    agregar_a_paquete_string(paquete, qcb->ruta_arch, strlen(qcb->ruta_arch));
+    t_wcb* worker = buscar_worker_libre();
+    // Control formal por si no hay workers libres (no deberia pasar)
+    if(worker == NULL){
+        log_error(loggerMaster, "No se encontro un Worker libre para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb->ruta_arch, qcb->prioridad, qcb->qid);
+        return;
+    }
+    // Actualizar WCB con proteccion de mutex
+    pthread_mutex_lock(&worker->mutex_wcb);
+    worker->esta_libre = false;
+    worker->qid_asig = qcb->qid;
+    pthread_mutex_unlock(&worker->mutex_wcb);
+    enviar_paquete(paquete, worker->socket);
+    eliminar_paquete(paquete);
+}    
+
+t_wcb *buscar_worker_libre(){
+    for(int i = 0; i < list_size(lista_workers); i++){
+        t_wcb *candidato = list_get(lista_workers, i);
+        if(candidato->esta_libre){
+            return candidato;
+        }
+    }
+    return NULL;
 }
 
 void crear_wcb(int id, int socket) {
@@ -227,9 +265,11 @@ void crear_wcb(int id, int socket) {
     wcb->esta_libre = true;
     wcb->qid_asig = -1; //-1 si no tiene query asignada
     wcb->socket = socket;
-    char key[16];
+    pthread_mutex_init(&wcb->mutex_wcb, NULL);
+    /*char key[16];
     sprintf(key, "%d", wcb->wid);
-    dictionary_put(diccionario_Workers, strdup(key), wcb);
+    dictionary_put(diccionario_Workers, strdup(key), wcb);*/
+    list_add(lista_workers, wcb);
 }
 
 void agregar_a_ready(t_qcb* qcb){
