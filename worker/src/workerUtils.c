@@ -70,25 +70,29 @@ void* iniciar_conexion_master(void* arg){
 }
 
 void esperar_queries(){
-    int cod_op = recibir_operacion(socket_master);
-    if(cod_op != EJECUTAR){
-        log_info(loggerWorker, "Error al recibir cod_op de Master, se esperaba EJECUTAR");
-        return;
+    while(true){
+        int cod_op = recibir_operacion(socket_master);
+        //recv(socket_master, &cod_op, sizeof(int), NULL);
+        log_info(loggerWorker, "Se recibio el codigo %d", cod_op);
+        if(cod_op != EJECUTAR){
+            log_info(loggerWorker, "Error al recibir cod_op de Master, se esperaba EJECUTAR");
+            return;
+        }
+        int offset = 0;
+        int pc, tamarch;
+        char *archivo;
+        void *buffer = recibir_buffer(socket_master);
+        memcpy(&(pc), buffer, sizeof(int));
+        offset += sizeof(int);
+        memcpy(&(tamarch), buffer + offset, sizeof(int));
+        offset += sizeof(int);
+        archivo = malloc(tamarch + 1);
+        memcpy(archivo, buffer + offset, tamarch);
+        archivo[tamarch] = '\0';
+        free(buffer);
+        log_info(loggerWorker, "Se recibio el PC %d correspondiente al archivo con path %s", pc, archivo);
+        //aca va el ciclo de instruccion
     }
-    int offset = 0;
-    int pc, tamarch;
-    char *archivo;
-    void *buffer = recibir_buffer(socket_master);
-    memcpy(&(pc), buffer, sizeof(int));
-    offset += sizeof(int);
-    memcpy(&(tamarch), buffer + offset, sizeof(int));
-    offset += sizeof(int);
-    archivo = malloc(tamarch + 1);
-    memcpy(archivo, buffer + offset, tamarch);
-    archivo[tamarch] = '\0';
-    free(buffer);
-    log_info(loggerWorker, "Se recibio el PC %d correspondiente al archivo con path %s", pc, archivo);
-    free(archivo);
 }
 
 void* iniciar_conexion_storage(void* arg){ 

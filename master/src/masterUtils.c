@@ -21,7 +21,7 @@ pthread_mutex_t mutex_cola_exec;
 pthread_mutex_t mutex_cola_exit;
 
 sem_t hay_worker_libre;
-sem_t hay_en_Ready;
+sem_t replanificar;
 sem_t hay_en_Exit;
 sem_t hay_en_Exec;
 
@@ -35,11 +35,11 @@ void inicializar_master() {
     //si creamos diccionario en esta linea explot a
     cargar_config();
     crear_logger();
-
-    t_qcb *qcb1 = crear_query_control("path1", 5);
+    
+    /*t_qcb *qcb1 = crear_query_control("path1", 5);
     t_qcb *qcb2 = crear_query_control("path2", 3);
     agregar_a_ready(qcb1);
-    agregar_a_ready(qcb2);
+    agregar_a_ready(qcb2);*/
     pthread_t hilo_planificador, hilo_servidor, hilo_exit;
     pthread_create(&hilo_planificador, NULL, inicializar_planificador, NULL);
     pthread_detach(hilo_planificador);
@@ -47,8 +47,6 @@ void inicializar_master() {
     pthread_detach(hilo_exit);
     pthread_create(&hilo_servidor, NULL, inicializar_servidor_multihilo, NULL);
     pthread_join(hilo_servidor, NULL);
-    
-    
 }
 
 void inicializar_listas() {
@@ -75,7 +73,7 @@ void inicializar_diccionario() {
 }
 
 void inicializar_semaforos() {
-    sem_init(&hay_en_Ready, 0, 0);
+    sem_init(&replanificar, 0, 0);
     sem_init(&hay_en_Exec, 0, 0);
     sem_init(&hay_en_Exit, 0, 0);
     sem_init(&hay_worker_libre, 0, 0);
@@ -133,7 +131,7 @@ void atender_QueryControl(int fd){
     t_qcb* qcb = crear_query_control(path_query, prioridad);
     log_info(loggerMaster, "## Se conecta un Query Control para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>. Nivel multiprocesamiento <%d>", path_query, prioridad, qcb->qid, cant_workers);
     agregar_a_ready(qcb);
-    sem_post(&hay_en_Ready);
+    sem_post(&replanificar);
 }
 
 void atender_Worker(int fd){
@@ -148,8 +146,12 @@ void atender_Worker(int fd){
     log_info(loggerMaster,"## Se conecta el Worker <%d> - Cantidad total de Workers: <%d>",id_worker, cant_workers);
     //COMO MANEJAMOS LOS SOCKETS??
     crear_wcb(id_worker, fd);
-
-    sem_post(&hay_worker_libre);
+    if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
+        sem_post(&hay_worker_libre);
+    }else{
+        sem_post(&replanificar);
+    }
+    
 }
 
 void* atender_conexion(void* arg){
@@ -249,9 +251,9 @@ void* inicializar_planificador(void* arg){
 void planificador_fifo(){
     //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
     while(true){
-        sem_wait(&hay_en_Ready);
+        sem_wait(&replanificar);
         log_info(loggerMaster, "Hay proceso en READY");
-        //sem_wait(&hay_worker_libre);
+        sem_wait(&hay_worker_libre);
         t_qcb* qcb_exec = list_get(cola_ready,0);
         log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
         agregar_a_exec(qcb_exec);
@@ -262,44 +264,63 @@ void planificador_fifo(){
 void planificador_prioridades(){
     //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
     while(true){
-        sem_wait(&hay_en_Ready);
+        sem_wait(&replanificar);
         log_info(loggerMaster, "Hay proceso en READY");
         //sem_wait(&hay_worker_libre);
         t_qcb* qcb_exec = buscar_qcb_mayor_prio();
-        
-        log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
-        agregar_a_exec(qcb_exec);
-        //mandar_a_ejecutar(qcb_exec);
+        if(cant_workers > 0)
+        {
+            t_wcb* wcb_elegido = buscar_wcb_menor_prio();
+            log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
+            agregar_a_exec(qcb_exec);
+            mandar_a_ejecutar(qcb_exec);
+        }else{
+            log_info(loggerMaster, "No hay workers disponibles");
+        }
     }
 }
 
 void* hilo_aging(void* arg){
     t_qcb* qcb = (t_qcb*) arg;
     while(qcb->estado == READY && qcb->prioridad > 0){
+        
         usleep(tiempo_aging * 1000);
         pthread_mutex_lock(&(qcb->mutex_qcb));
         qcb->prioridad -= 1;
         pthread_mutex_unlock(&(qcb->mutex_qcb));
         log_info(loggerMaster, "Aging aplicado a la Query <%s> - Id asignado: <%d>. Nueva prioridad <%d>", qcb->ruta_arch, qcb->qid, qcb->prioridad);
+        if(buscar_worker_libre() == NULL){
+        sem_post(&replanificar);
+        }
     }
     return NULL;
 }
 
 t_qcb* buscar_qcb_mayor_prio(){
+    log_info(loggerMaster, "Buscando QCB de mayor prioridad");
     t_qcb* qcb_prio = list_get(cola_ready,0);
+    pthread_mutex_lock(&mutex_cola_ready);
     for(int i = 1; i < list_size(cola_ready); i++){
+        pthread_mutex_unlock(&mutex_cola_ready);
+        log_info(loggerMaster, "Buscando LISTA");
         t_qcb* qcb_actual = list_get(cola_ready,i);
+        pthread_mutex_lock(&(qcb_actual->mutex_qcb));
+        pthread_mutex_lock(&(qcb_prio->mutex_qcb));
         if(qcb_prio->prioridad > qcb_actual->prioridad){
+            pthread_mutex_unlock(&(qcb_prio->mutex_qcb));
+            pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
             qcb_prio = qcb_actual;
         }
     }
+    
+    log_info(loggerMaster, "ENCONTRADO, QCB ID %d", qcb_prio->qid);
     pthread_mutex_lock(&mutex_cola_ready);
-    list_remove_element (cola_ready, qcb_prio);
+    list_remove_element(cola_ready, qcb_prio);
     pthread_mutex_unlock(&mutex_cola_ready);
     return qcb_prio;
 }
-/*
-t_wcb* buscar_qcb_menor_prio() {
+
+t_wcb* buscar_wcb_menor_prio() {
     t_wcb* wcb_prio = list_get(lista_workers,0);
     t_qcb* qcb_prio = dictionary_get(diccionario_qcb, wcb_prio->qid_asig);
     for(int i = 1; i < list_size(lista_workers); i++){
@@ -311,7 +332,7 @@ t_wcb* buscar_qcb_menor_prio() {
         }
     }
     return wcb_prio;
-}*/
+}
 
 void mandar_a_ejecutar(t_qcb* qcb) {
     //BUSCAR UN WORKER LIBRE
