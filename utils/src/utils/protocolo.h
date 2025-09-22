@@ -52,7 +52,8 @@ void *recibir_buffer(int socket_cliente);
 void enviar_operacion(int socket_cliente, int cod_op);
 int recibir_operacion(int socket_cliente);
 
-
+uint32_t buffer_leer_uint32_t(t_buffer* buffer, int *offset);
+char* buffer_leer_string(t_buffer* buffer, int *offset);
 
 
 #endif

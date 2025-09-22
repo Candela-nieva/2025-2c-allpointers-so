@@ -39,7 +39,7 @@ void enviar_ok(int fd) {
 }
 
 void agregar_a_paquete_string(t_paquete* paquete, char* cadena, int tamanio) {
-    int cadena_length = strlen(cadena);
+    int cadena_length = strlen(cadena); // ee no seria lo mimso que tamanio?
     size_t size = sizeof(int);  // Tamaño en bytes de un entero
     
     // Expandir el tamaño del buffer del paquete para acomodar la longitud de la cadena
@@ -52,6 +52,23 @@ void agregar_a_paquete_string(t_paquete* paquete, char* cadena, int tamanio) {
     memcpy(paquete->buffer->stream + paquete->buffer->size, cadena, tamanio);
     paquete->buffer->size += tamanio;
 }
+
+/*
+void agregar_a_paquete_string(t_paquete* paquete, char* cadena) {
+    uint32_t length = strlen(cadena) + 1; // incluimos el '\0'
+
+    // Reservar espacio para length
+    paquete->buffer->stream = realloc(paquete->buffer->stream, paquete->buffer->size + sizeof(uint32_t));
+    memcpy(paquete->buffer->stream + paquete->buffer->size, &length, sizeof(uint32_t));
+    paquete->buffer->size += sizeof(uint32_t);
+
+    // Reservar espacio para la cadena
+    paquete->buffer->stream = realloc(paquete->buffer->stream, paquete->buffer->size + length);
+    memcpy(paquete->buffer->stream + paquete->buffer->size, cadena, length);
+    paquete->buffer->size += length;
+}
+// De esta forma queda consistente: siempre mandás [uint32_t length][char[length]].
+*/
 
 void *serializar_paquete(t_paquete *paquete, int bytes)
 {
@@ -128,3 +145,27 @@ int recibir_operacion(int socket_cliente){
         return cod_op;
     return -1;
 }
+
+// --- FUNCIONES DE LECTURA DESDE BUFFER ---
+
+// Lee un uint32_t del buffer y avanza el offset
+uint32_t buffer_leer_uint32_t(t_buffer* buffer, int *offset) {
+    uint32_t value;
+    memcpy(&value, buffer->stream + *offset, sizeof(uint32_t));
+    *offset += sizeof(uint32_t);
+    return value;
+}
+
+// Lee un string con length al inicio del buffer y avanza el offset
+char* buffer_leer_string(t_buffer* buffer, int* offset) {
+    uint32_t length = buffer_leer_uint32_t(buffer, offset);
+    char* str = malloc(length);
+    memcpy(str, buffer->stream + *offset, length);
+    *offset += length;
+    return str; // incluye el '\0' si el emisor lo envió
+}
+
+// Luego del lado del master deberian serializar con agregar_a_paquete_string
+//int32_t length = strlen(path_query) + 1; // incluimos el '\0'
+//buffer_add(pack->buffer, &length, sizeof(uint32_t));
+//buffer_add(pack->buffer, path_query, length);

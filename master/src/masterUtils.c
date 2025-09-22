@@ -154,6 +154,52 @@ void atender_Worker(int fd){
     
 }
 
+/*
+void* hilo_query_control(void* arg) {
+    int fd = *(int*)arg;
+    free(arg);
+
+    atender_QueryControl(fd); // Procesa el handshake y agrega la query
+
+    // Aquí puedes agregar el bucle de comunicación con Query Control
+    bool finalizar = false;
+    while (!finalizar) {
+        // Ejemplo: enviar mensajes, recibir respuestas, etc.
+        // Cuando la query termina:
+        // enviar_paquete_fin_query(fd); // Implementa esta función para enviar el mensaje de finalización
+        finalizar = true; // Cambia esto según tu lógica
+    }
+
+    close(fd); // Solo cierras el socket al finalizar
+    return NULL;
+}
+
+void* atender_conexion(void* arg){
+    int fd = *(int *)arg;
+    op_code op = recibir_operacion(fd);
+    switch (op) {
+        case HANDSHAKE_QUERY: {
+            log_info(loggerMaster, "## Query Control Conectado - FD del socket: %d", fd);
+            int* fd_ptr = malloc(sizeof(int));
+            *fd_ptr = fd;
+            pthread_t hilo_qc;
+            pthread_create(&hilo_qc, NULL, hilo_query_control, fd_ptr);
+            pthread_detach(hilo_qc);
+            break;
+        }
+        case HANDSHAKE_WORKER:
+            log_info(loggerMaster, "## Worker Conectado - FD del socket: %d", fd);
+            atender_Worker(fd);
+            close(fd);
+            break;
+        default:
+            log_info(loggerMaster, "## Handshake inválido (%d) en fd %d", op, fd);
+            close(fd);
+            break;
+    }
+    return NULL;
+}
+*/
 void* atender_conexion(void* arg){
     int fd = *(int *)arg;
     free(arg);

@@ -24,7 +24,18 @@ void inicializar_config(void){
 }
 
 void cargar_config() {
+    
+    if(!config_worker){
+       log_info(loggerWorker, "Ruta de config no establecida\n");
+       return;
+    }
+
     config = config_create(config_worker);
+    if(!config){
+       log_info(loggerWorker, "No se pudo abrir el archivo de config: %s\n", config_worker);
+       return;
+    }
+
     config_struct->modulo = config_get_string_value (config, "MODULO");
     config_struct->ip_master = config_get_string_value(config, "IP_MASTER");
     config_struct->puerto_master = config_get_string_value(config, "PUERTO_MASTER");
@@ -90,8 +101,12 @@ void esperar_queries(){
         memcpy(archivo, buffer + offset, tamarch);
         archivo[tamarch] = '\0';
         free(buffer);
-        log_info(loggerWorker, "Se recibio el PC %d correspondiente al archivo con path %s", pc, archivo);
+
+       log_info(loggerWorker, "Se recibio el PC %d correspondiente al archivo con path %s", pc, archivo);
+        //log_info(loggerWorker, "## Query %d: Se recibe la Query. El path de operaciones es: %s", worker_id, archivo);
+
         //aca va el ciclo de instruccion
+        free(archivo);
     }
 }
 
