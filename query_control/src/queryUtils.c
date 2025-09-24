@@ -31,7 +31,7 @@ void iniciar_conexion_master(char* path_query, int prioridad) {
 
     eliminar_paquete(pack);
 
-    //escuchar_master(socket_master);
+    escuchar_master(socket_master);
 
     // Cierre ordenado si por ahora terminamos después del handshake:
     close(socket_master); // cierro al salir de la escucha en escuchar_master
@@ -49,7 +49,7 @@ void escuchar_master(int socket_master) {
         int offset = 0;
         switch(paquete->cod_op) {
             //MENSAJE DE READ
-            case 100: {
+            case MASTER_TO_QC_READ_RESULT: {
                 char* file_tag = buffer_leer_string(paquete->buffer, &offset); // extrer string del paquete
                 char* contenido = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
                 log_info(loggerQueryCTRL, "## Lectura realizada: Archivo %s, contenido: %s", file_tag, contenido); // LOG OBLIGATORIO
@@ -59,7 +59,7 @@ void escuchar_master(int socket_master) {
             }
 
             //MENSAJE FIN_QUERY
-            case 101: {
+            case MASTER_TO_QC_END:{
                 char* motivo = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
                 log_info(loggerQueryCTRL, "## Query Finalizada - %s", motivo); // LOG OBLIGATORIO
                 free(motivo);
@@ -103,13 +103,14 @@ void cargar_config() {
     }*/
 
     if(!config_queryCTRL){
-        log_info(loggerQueryCTRL, "Ruta de config no establecida\n");
+        fprintf(stderr, "Ruta de config no establecida\n"); //aun no existe el logger
         return;
     }
 
     config = config_create(config_queryCTRL);
     if(!config){
-        log_info(loggerQueryCTRL, "No se pudo abrir el archivo de config: %s\n", config_queryCTRL);
+        fprintf(stderr, "No se pudo abrir el archivo de config: %s\n", config_queryCTRL); //aun no existe el logger
+        return;
         return;
     }
 

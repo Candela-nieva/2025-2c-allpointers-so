@@ -89,10 +89,14 @@ void iniciar_servidor_multihilo(void)
             agregar_a_paquete(paquete, &tam_bloq, sizeof(int));
             enviar_paquete(paquete, fd_conexion);
             eliminar_paquete(paquete);
+            close(fd_conexion); // NUEVO: cierro si no voy a atender más
             //pthread_t hilo_worker;
             //pthread_create(&hilo_worker, NULL, atender_conexion, NULL);
             //pthread_detach(hilo_worker);
-
+        }
+        else{
+            log_info(loggerStorage, "Operacion desconocida. Cerrando conexion.");
+            close(fd_conexion);
         }
     }
     // Nunca llega acá

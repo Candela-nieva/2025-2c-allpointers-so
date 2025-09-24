@@ -10,11 +10,10 @@ en el formato correcto
 
 int main(int argc, char* argv[]) {
     
-    if(argc < 4) {
+    /*if(argc < 4) {
         log_info(loggerQueryCTRL, "Uso: %s <archivo_config> <archivo_query> <prioridad>\n", argv[0]);
-        //fprintf(stderr, "Uso: %s <archivo_config> <archivo_query> <prioridad>\n", argv[0]);
         return EXIT_FAILURE;
-    }
+    }*/
     
     // Ejemplo de parametros hardcodeados para pruebas rapidas
     //config_queryCTRL = "query.config";
@@ -25,7 +24,17 @@ int main(int argc, char* argv[]) {
     config_queryCTRL = argv[1];
     char* path_query = argv[2];
     int prioridad = atoi(argv[3]);
+
+    saludar("query_control");
+    inicializar_config();
+    cargar_config();
+    crear_logger();
     
+    if(argc < 4) {
+        log_info(loggerQueryCTRL, "Uso: %s <archivo_config> <archivo_query> <prioridad>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
     if(prioridad < 0){
         log_info(loggerQueryCTRL, "Prioridad invalida: %s\n", argv[3]);
         return EXIT_FAILURE;
@@ -37,11 +46,10 @@ int main(int argc, char* argv[]) {
     // Si es asi, como lo hacemos? Lo pasamos por linea de comando?
     // En ese caso, al cargar la config, usamos config_queryCTRL en vez de "query.config"
 
-    saludar("query_control");
-    //config_queryCTRL = "query.config";
+    /*saludar("query_control");
     inicializar_config();
     cargar_config();
-    crear_logger();
+    crear_logger();*/
     
     iniciar_conexion_master(path_query, prioridad);
     

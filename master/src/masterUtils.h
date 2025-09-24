@@ -34,6 +34,7 @@ typedef struct {
     t_estado estado;
     char* ruta_arch;
     int prioridad;
+    int fd_qc;  //NUEVO: socket del QueryControl
     pthread_mutex_t mutex_qcb;
 } t_qcb;
 

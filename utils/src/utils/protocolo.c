@@ -169,3 +169,5 @@ char* buffer_leer_string(t_buffer* buffer, int* offset) {
 //int32_t length = strlen(path_query) + 1; // incluimos el '\0'
 //buffer_add(pack->buffer, &length, sizeof(uint32_t));
 //buffer_add(pack->buffer, path_query, length);
+
+

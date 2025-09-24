@@ -2,7 +2,7 @@
 #include "workerUtils.h"
 int main(int argc, char* argv[]) {
 
-     if(argc < 3) {
+     if(argc < 3) { // mientras usamos printf no esta mal, pero al usar log_info necesitamos el logger inicializado
         printf("Uso: %s <path_config> <worker_id>\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
     pthread_t hilo_storage, hilo_master;
     pthread_create(&hilo_storage, NULL, iniciar_conexion_storage, NULL);
     pthread_create(&hilo_master, NULL, iniciar_conexion_master, id);
-    pthread_join(hilo_master, NULL);
+    pthread_join(hilo_master, NULL); // join --> asegura que el programa no finalice hasta que ambos hilos terminen (o sea, hasta que Master o Storage corten la conexión)
     pthread_join(hilo_storage, NULL);
     return 0;
 }

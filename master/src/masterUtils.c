@@ -129,6 +129,7 @@ void atender_QueryControl(int fd){
     free(buffer);
 
     t_qcb* qcb = crear_query_control(path_query, prioridad);
+    qcb->fd_qc = fd; //NUEVO: guardo el socket del QC en el QCB para futuras comunicaciones
     log_info(loggerMaster, "## Se conecta un Query Control para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>. Nivel multiprocesamiento <%d>", path_query, prioridad, qcb->qid, cant_workers);
     agregar_a_ready(qcb);
     sem_post(&replanificar);
@@ -176,6 +177,7 @@ void* hilo_query_control(void* arg) {
 
 void* atender_conexion(void* arg){
     int fd = *(int *)arg;
+
     op_code op = recibir_operacion(fd);
     switch (op) {
         case HANDSHAKE_QUERY: {
@@ -215,9 +217,10 @@ void* atender_conexion(void* arg){
             break;
         default:
             log_info(loggerMaster, "## Handshake inválido (%d) en fd %d", op, fd);
+            close(fd); // NUEVO: cerrar el socket en caso de handshake inválido
             break;
     }
-    close(fd);
+   // close(fd);   // no cerrar fd aqui, lo mantiene QCB/WCB
     return NULL;
 }
 
@@ -242,12 +245,14 @@ t_qcb* crear_query_control(char* path, int prioridad){
     qcb->estado = READY;
     qcb->ruta_arch = path;
     qcb->prioridad = prioridad;
+    qcb->fd_qc = -1; //NUEVO: inicializo en -1, se setea luego en atender_QueryControl
     pthread_mutex_init(&(qcb->mutex_qcb), NULL);
     
     pthread_mutex_lock(&mutex_qid);
     qid++;
     pthread_mutex_unlock(&mutex_qid);
-    char *key = malloc(sizeof(int));
+
+    char *key = malloc(sizeof(int)); //eso no seria muy chico?
     sprintf(key, "%d",qcb->qid);
     log_info(loggerMaster, "SE GUARDO LA LLAVE %s",key);
     pthread_mutex_lock(&mutex_diccionario_qcb);
@@ -300,7 +305,7 @@ void planificador_fifo(){
         sem_wait(&replanificar);
         log_info(loggerMaster, "Hay proceso en READY");
         sem_wait(&hay_worker_libre);
-        t_qcb* qcb_exec = list_get(cola_ready,0);
+        t_qcb* qcb_exec = list_get(cola_ready,0); // no sería list_remove? y tene un mutex protegiendo la cola
         log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
         agregar_a_exec(qcb_exec);
         mandar_a_ejecutar(qcb_exec);

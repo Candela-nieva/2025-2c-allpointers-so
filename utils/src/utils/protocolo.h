@@ -31,9 +31,10 @@ typedef enum{
     HANDSHAKE_QUERY,
     MENSAJE,
     ENVIAR_TAMANIO_BLOQUE,
-    EJECUTAR,
-    MENSAJE_READ_QUERY = 100, // Mensaje que se le manda a query
-    MENSAJE_FIN_QUERY = 101   // Mensaje que se le manda a query
+    EJECUTAR, // Mensaje que se le manda a worker como solicitud de ejecutar una nueva query
+    FIN_QUERY, // Mensaje que se le manda a worker para indicarle que no hay mas queries para ejecutar
+    MASTER_TO_QC_READ_RESULT, // Mensaje que se le manda a query
+    MASTER_TO_QC_END   // Mensaje que se le manda a query
 } op_code;
 
 void saludar(char* quien);
