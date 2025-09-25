@@ -34,7 +34,7 @@ typedef struct {
     t_estado estado;
     char* ruta_arch;
     int prioridad;
-    int fd_qc;  //NUEVO: socket del QueryControl
+    int socket;  //NUEVO: socket del QueryControl
     pthread_mutex_t mutex_qcb;
 } t_qcb;
 
@@ -64,7 +64,7 @@ void crear_logger ();
 void cargar_config ();
 void inicializar_diccionario();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
-t_qcb* crear_query_control(char* path, int prioridad);
+t_qcb* crear_query_control(char* path, int prioridad, int fd);
 void* atender_conexion(void* arg);
 void atender_QueryControl(int fd);
 void atender_Worker(int fd);
@@ -81,12 +81,14 @@ void* inicializar_planificador(void* arg);
 void planificador_fifo();
 void planificador_prioridades();
 void *planificar_exit(void *arg);
-void mandar_a_ejecutar(t_qcb* qcb);
+void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker);
 t_wcb* buscar_worker_libre();
 void crear_wcb (int id, int socket);
 t_qcb* buscar_qcb_mayor_prio();
 t_wcb* buscar_wcb_menor_prio();
-
+t_qcb* buscar_qcb_por_ID(int qid);
+void actualizar_Estado(t_qcb* qcb, t_estado nuevo_estado);
+void mandar_a_desalojar(t_qcb* qcb);
 // =================== EXIT =========================
 void eliminar_qcb_diccionario(int qid);
 void eliminar_qcb(void* element);

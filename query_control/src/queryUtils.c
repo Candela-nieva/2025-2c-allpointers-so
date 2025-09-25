@@ -34,45 +34,41 @@ void iniciar_conexion_master(char* path_query, int prioridad) {
     escuchar_master(socket_master);
 
     // Cierre ordenado si por ahora terminamos después del handshake:
-    close(socket_master); // cierro al salir de la escucha en escuchar_master
+    //close(socket_master); // cierro al salir de la escucha en escuchar_master
     //log_info(loggerQueryCTRL, "## Query Finalizada - OK");
 }
 
 void escuchar_master(int socket_master) {
     while(1) {
-        t_paquete* paquete = recibir_buffer(socket_master);
-        if(paquete == NULL) {
-            log_info(loggerQueryCTRL, "Conexion con el Master perdida");
-            break;
-        }
-        
-        int offset = 0;
-        switch(paquete->cod_op) {
+        //SOCKET 
+        op_code operacion = recibir_operacion(socket_master);
+        switch(operacion) {
             //MENSAJE DE READ
-            case MASTER_TO_QC_READ_RESULT: {
+            case MASTER_TO_QC_READ_RESULT:
+                /*int offset = 0;
                 char* file_tag = buffer_leer_string(paquete->buffer, &offset); // extrer string del paquete
                 char* contenido = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
                 log_info(loggerQueryCTRL, "## Lectura realizada: Archivo %s, contenido: %s", file_tag, contenido); // LOG OBLIGATORIO
                 free(file_tag);
                 free(contenido);
-                break;
-            }
-
+                break;*/
             //MENSAJE FIN_QUERY
-            case MASTER_TO_QC_END:{
-                char* motivo = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
+            case MASTER_TO_QC_END:
+               /* char* motivo = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
                 log_info(loggerQueryCTRL, "## Query Finalizada - %s", motivo); // LOG OBLIGATORIO
                 free(motivo);
                 eliminar_paquete(paquete);
                 //close(socket_master);
-                return; // Salimos de la función y terminamos la escucha
-            }
-
+                return; // Salimos de la función y terminamos la escucha*/
+            case -1:
+                log_info(loggerQueryCTRL, "El Master ha cerrado la conexión");
+                close(socket_master);
+                return;
             default:
                 log_info(loggerQueryCTRL, "Operación desconocida recibida del Master"); // LOG NO OBLIGATORIO
-                break;
+                return;
         }
-        eliminar_paquete(paquete);
+        //eliminar_paquete(paquete);
     }
 }
 

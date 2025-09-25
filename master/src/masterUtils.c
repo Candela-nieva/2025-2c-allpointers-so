@@ -102,7 +102,7 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 	t_log* nuevo_logger;
 	nuevo_logger = log_create( nombreArchivoLog, nombreLog, seMuestraEnConsola, nivelDetalle);
     if (nuevo_logger == NULL) {
-		perror("Error en el logger"); // Maneja error si no se puede crear el logger
+		perror("Error en el logger "); // Maneja error si no se puede crear el logger
 		exit(EXIT_FAILURE);
 	}
 	return nuevo_logger;
@@ -128,11 +128,79 @@ void atender_QueryControl(int fd){
     memcpy(&prioridad, buffer + offset, sizeof(int));
     free(buffer);
 
-    t_qcb* qcb = crear_query_control(path_query, prioridad);
-    qcb->fd_qc = fd; //NUEVO: guardo el socket del QC en el QCB para futuras comunicaciones
+    t_qcb* qcb = crear_query_control(path_query, prioridad, fd);
+    
     log_info(loggerMaster, "## Se conecta un Query Control para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>. Nivel multiprocesamiento <%d>", path_query, prioridad, qcb->qid, cant_workers);
     agregar_a_ready(qcb);
     sem_post(&replanificar);
+
+    while(true){
+        op_code op = recibir_operacion(fd);
+        switch(op) {
+            case -1:
+                switch(qcb->estado) {
+                    case READY:
+                        log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado READY", qcb->qid);
+                        actualizar_Estado(qcb, EXIT);
+                        agregar_a_exit(qcb);
+                        sem_post(&hay_en_Exit);
+                        return;
+                    case EXEC:
+                        log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXEC", qcb->qid);
+                        mandar_a_desalojar(qcb);
+                        agregar_a_exit(qcb);
+                        sem_post(&hay_en_Exit);
+                        return;
+                    default:
+                        log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXIT", qcb->qid);
+                        return;
+                }
+            default:
+                log_info(loggerMaster, "Operacion desconocida recibida del Query Control ID <%d>", qcb->qid);
+                return;
+        }
+    }
+}
+
+void mandar_a_desalojar(t_qcb* qcb) {
+    t_wcb* worker = buscar_worker_por_qid(qcb->estado);
+    if(worker){
+        t_paquete* paquete = crear_paquete(DESALOJO);
+        enviar_paquete(paquete,worker->socket);
+        eliminar_paquete(paquete);
+        int op = recibir_operacion(worker->socket);
+        if(op != PC_ACTUALIZADO){
+            log_error(loggerMaster, "Error al recibir confirmacion de desalojo del Worker %d para la Query %d", worker->wid, qcb->qid);
+            return;
+        }
+        void *buffer = recibir_buffer(worker->socket);
+        int pc_actualizado;
+        memcpy(&pc_actualizado, buffer, sizeof(int));
+        free(buffer);
+        qcb->pc = pc_actualizado;
+        log_info(loggerMaster, "Query %d desalojada del Worker %d, PC actualizado a %d", qcb->qid, worker->wid, qcb->pc);
+        actualizar_Estado(qcb, READY);
+        agregar_a_ready(qcb);
+        sem_post(&replanificar);
+    }
+}
+
+buscar_worker_por_qid(int qid) {
+    for(int i = 0; i < list_size(lista_workers); i++){
+        t_wcb *candidato = list_get(lista_workers, i);
+        if(candidato->qid_asig == qid){
+            return candidato;
+        }
+    }
+    return NULL;
+}
+
+void actualizar_Estado(t_qcb* qcb, t_estado nuevo_estado){
+    t_estado estado_anterior = qcb->estado;
+    pthread_mutex_lock(&(qcb->mutex_qcb));
+    qcb->estado = nuevo_estado;
+    pthread_mutex_unlock(&(qcb->mutex_qcb));
+    log_info(loggerMaster, "Query ID <%d> cambio de estado de <%d> a <%d>", qcb->qid, estado_anterior, nuevo_estado);
 }
 
 void atender_Worker(int fd){
@@ -210,6 +278,7 @@ void* atender_conexion(void* arg){
         case HANDSHAKE_QUERY:
             log_info(loggerMaster, "## Query Control Conectado - FD del socket: %d", fd);
             atender_QueryControl(fd);
+            close(fd);
             break;
         case HANDSHAKE_WORKER:
             log_info(loggerMaster, "## Worker Conectado - FD del socket: %d", fd);
@@ -238,14 +307,14 @@ void* inicializar_servidor_multihilo(void* arg) {
     }
 }
 
-t_qcb* crear_query_control(char* path, int prioridad){
+t_qcb* crear_query_control(char* path, int prioridad, int fd){
     t_qcb* qcb = malloc(sizeof(t_qcb));
     qcb->qid = qid;
     qcb->pc = 0; //program counter
     qcb->estado = READY;
     qcb->ruta_arch = path;
     qcb->prioridad = prioridad;
-    qcb->fd_qc = -1; //NUEVO: inicializo en -1, se setea luego en atender_QueryControl
+    qcb->socket = fd; //NUEVO: guardo el socket del QC en el QCB para futuras comunicaciones; //NUEVO: inicializo en -1, se setea luego en atender_QueryControl
     pthread_mutex_init(&(qcb->mutex_qcb), NULL);
     
     pthread_mutex_lock(&mutex_qid);
@@ -269,10 +338,20 @@ void* planificar_exit(void *arg){
         t_qcb *qcb_elim = list_remove(cola_exit,0);
         log_info(loggerMaster, "Query en Exit - ID asignado <%d>",qcb_elim->qid);
         eliminar_qcb_diccionario(qcb_elim->qid);
-        //eliminar_qcb(qcb_elim);
+        
+        t_paquete* paquete = crear_paquete(MASTER_TO_QC_END);
+        enviar_paquete(paquete, socket);
+        eliminar_paquete(paquete);
+        
     }
     return NULL;
 }
+
+/*void enviar_paquete_por_op(int socket, op_code codigo) {
+    t_paquete* paquete = crear_paquete(codigo);
+    enviar_paquete(paquete, socket);
+    eliminar_paquete(paquete);
+}*/
 
 void eliminar_qcb_diccionario(int qid) {
     char* key = malloc(sizeof(int));
@@ -285,6 +364,7 @@ void eliminar_qcb_diccionario(int qid) {
 
 void eliminar_qcb(void* element){
     t_qcb* qcb = (t_qcb*) element;
+    close(qcb->socket);
     free(qcb->ruta_arch);
     free(qcb);
 }
@@ -307,26 +387,35 @@ void planificador_fifo(){
         sem_wait(&hay_worker_libre);
         t_qcb* qcb_exec = list_get(cola_ready,0); // no sería list_remove? y tene un mutex protegiendo la cola
         log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
+        t_wcb* wcb_elegido = buscar_worker_libre();
         agregar_a_exec(qcb_exec);
-        mandar_a_ejecutar(qcb_exec);
+        mandar_a_ejecutar(qcb_exec, wcb_elegido);
     }
 }
 
 void planificador_prioridades(){
     //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
     while(true){
-        sem_wait(&replanificar);
+    sem_wait(&replanificar);
         log_info(loggerMaster, "Hay proceso en READY");
         //sem_wait(&hay_worker_libre);
         t_qcb* qcb_exec = buscar_qcb_mayor_prio();
+        log_info(loggerMaster, "SALI DE LA FUNCION");
         if(cant_workers > 0)
         {
-            t_wcb* wcb_elegido = buscar_wcb_menor_prio();
+            log_info(loggerMaster, "BUSCANDO WORKER");
+            //t_wcb* wcb_elegido = buscar_wcb_menor_prio();
             log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
+            t_wcb* wcb_elegido = buscar_worker_libre();
+            if(wcb_elegido){
             agregar_a_exec(qcb_exec);
-            mandar_a_ejecutar(qcb_exec);
+            mandar_a_ejecutar(qcb_exec, wcb_elegido);
+            }else{
+                wcb_elegido = buscar_wcb_menor_prio();
+            }
         }else{
             log_info(loggerMaster, "No hay workers disponibles");
+            agregar_a_ready(qcb_exec);
         }
     }
 }
@@ -349,34 +438,37 @@ void* hilo_aging(void* arg){
 
 t_qcb* buscar_qcb_mayor_prio(){
     log_info(loggerMaster, "Buscando QCB de mayor prioridad");
-    t_qcb* qcb_prio = list_get(cola_ready,0);
-    pthread_mutex_lock(&mutex_cola_ready);
+    t_qcb*  qcb_prio = list_get(cola_ready,0);
+    int indice = 0;
+    //ESTOS LOCKS ESTABAN COMPLICADOS
     for(int i = 1; i < list_size(cola_ready); i++){
-        pthread_mutex_unlock(&mutex_cola_ready);
+        //pthread_mutex_unlock(&mutex_cola_ready);
         log_info(loggerMaster, "Buscando LISTA");
         t_qcb* qcb_actual = list_get(cola_ready,i);
-        pthread_mutex_lock(&(qcb_actual->mutex_qcb));
-        pthread_mutex_lock(&(qcb_prio->mutex_qcb));
+        //pthread_mutex_lock(&(qcb_actual->mutex_qcb));
+        //pthread_mutex_lock(&(qcb_prio->mutex_qcb));
         if(qcb_prio->prioridad > qcb_actual->prioridad){
-            pthread_mutex_unlock(&(qcb_prio->mutex_qcb));
-            pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
+            //pthread_mutex_unlock(&(qcb_prio->mutex_qcb));
+            //pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
             qcb_prio = qcb_actual;
+            indice = i;
         }
     }
     
     log_info(loggerMaster, "ENCONTRADO, QCB ID %d", qcb_prio->qid);
     pthread_mutex_lock(&mutex_cola_ready);
-    list_remove_element(cola_ready, qcb_prio);
+    t_qcb* qcb_aExec = list_remove(cola_ready,indice);
     pthread_mutex_unlock(&mutex_cola_ready);
-    return qcb_prio;
+    return  qcb_aExec;
 }
 
 t_wcb* buscar_wcb_menor_prio() {
+    //ESTA FUNCION SE LLAMABA EN UN INSTANTE ERRONEO
     t_wcb* wcb_prio = list_get(lista_workers,0);
-    t_qcb* qcb_prio = dictionary_get(diccionario_qcb, wcb_prio->qid_asig);
+    t_qcb* qcb_prio = buscar_qcb_por_ID(wcb_prio->qid_asig);
     for(int i = 1; i < list_size(lista_workers); i++){
         t_wcb* wcb_actual = list_get(lista_workers,i);
-        t_qcb* qcb_actual = dictionary_get(diccionario_qcb, wcb_actual->qid_asig);
+        t_qcb* qcb_actual = buscar_qcb_por_ID(wcb_prio->qid_asig);
         if(qcb_prio->prioridad < qcb_actual->prioridad){
             wcb_prio = wcb_actual;
             qcb_prio = qcb_actual;
@@ -385,16 +477,21 @@ t_wcb* buscar_wcb_menor_prio() {
     return wcb_prio;
 }
 
-void mandar_a_ejecutar(t_qcb* qcb) {
+t_qcb* buscar_qcb_por_ID(int qid){
+    t_qcb* qcb = dictionary_get(diccionario_qcb, qid);
+    return qcb;
+}
+
+void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker) {
     //BUSCAR UN WORKER LIBRE
     //MANDARLE LA QUERY
     
-    t_wcb* worker = buscar_worker_libre();
+    //t_wcb* worker = buscar_worker_libre();
     // Control formal por si no hay workers libres (no deberia pasar)
-    if(worker == NULL){
+    /*if(worker == NULL){
         log_error(loggerMaster, "No se encontro un Worker libre para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb->ruta_arch, qcb->prioridad, qcb->qid);
         return;
-    }
+    }*/
     // Actualizar WCB con proteccion de mutex
     pthread_mutex_lock(&worker->mutex_wcb);
     worker->esta_libre = false;

@@ -34,7 +34,9 @@ typedef enum{
     EJECUTAR, // Mensaje que se le manda a worker como solicitud de ejecutar una nueva query
     FIN_QUERY, // Mensaje que se le manda a worker para indicarle que no hay mas queries para ejecutar
     MASTER_TO_QC_READ_RESULT, // Mensaje que se le manda a query
-    MASTER_TO_QC_END   // Mensaje que se le manda a query
+    MASTER_TO_QC_END, // Mensaje que se le manda a query
+    PC_ACTUALIZADO,
+    DESALOJO   // Mensaje que se le manda a worker
 } op_code;
 
 void saludar(char* quien);
