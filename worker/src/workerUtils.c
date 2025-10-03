@@ -8,7 +8,9 @@ t_config_worker* config_struct = NULL;
 int socket_storage;
 int socket_master;
 char* config_worker;
-
+//implementar mutex para este bool, y posiblemente conviene usar un flag para esto
+// atomic_int interrupt_flag = ATOMIC_VAR_INIT(0);
+bool interrupt = false;
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_worker)); //Reserva memoria
     config_struct->modulo = NULL;
@@ -98,7 +100,7 @@ void* iniciar_conexion_master(void* arg){
 
     return NULL;
 }
-
+//CONVIENE UTILIZAR IN HILO PARA ESTO
 void esperar_queries(){
     while(true){
         
@@ -123,11 +125,17 @@ void esperar_queries(){
         switch(cod_op) {
             case EJECUTAR: // Master avisa que hay una nueva query para que este worker ejecute
                 void* buffer = recibir_buffer(socket_master);
-                manejar_ejecutar(buffer);
-                free(buffer);
+                pthread_t ejecutar;
+                pthread_create(&ejecutar, NULL, manejar_ejecutar, buffer);
+                pthread_detach(ejecutar);
                 log_info(loggerWorker, "Se recibio la operacion EJECUTAR");
                 break;
-            
+            //NUEVO!!!!!
+            case DESALOJO :
+                log_info(loggerWorker, "Master ha indicado DESALOJO de Query actual.");
+                interrupt = true;
+                break;
+
             case FIN_QUERY: // Master avisa que NO hay mas queries para que este worker ejecute
                 log_info(loggerWorker, "Master ha indicado FIN_QUERY. Finalizando espera de queries.");
                 return; // Salir de la función para finalizar la espera de queries
@@ -138,31 +146,49 @@ void esperar_queries(){
                 break; // Salir del switch para esperar la operación correcta
                 continue; // Volver al inicio del bucle para esperar la operación correcta
         }
-
-        /*
-        int offset = 0;
-        int pc, tamarch;
-        char *archivo;
-        void *buffer = recibir_buffer(socket_master);
-        memcpy(&(pc), buffer, sizeof(int));
-        offset += sizeof(int);
-        memcpy(&(tamarch), buffer + offset, sizeof(int));
-        offset += sizeof(int);
-        archivo = malloc(tamarch + 1);
-        memcpy(archivo, buffer + offset, tamarch);
-        archivo[tamarch] = '\0';
-        free(buffer);
-
-       log_info(loggerWorker, "Se recibio el PC %d correspondiente al archivo con path %s", pc, archivo);
-       //log_info(loggerWorker, "## Query %d: Se recibe la Query. El path de operaciones es: %s", worker_id, archivo);
-       */
-       //aca va el ciclo de instruccion
-       //free(archivo);
     }
+}
+// DESERIALIZAR EJECUTAR + LLAMADA A EJECUTAR_QUERY
+void* manejar_ejecutar(void* buffer) {
+    int offset = 0;
+    int pc, tamarch;
+    char *archivo;
+    
+    memcpy(&(pc), buffer + offset, sizeof(int));
+    offset += sizeof(int);
+    
+    memcpy(&(tamarch), buffer + offset, sizeof(int));
+    offset += sizeof(int);
+    
+    archivo = malloc(tamarch + 1);
+    memcpy(archivo, buffer + offset, tamarch);
+    archivo[tamarch] = '\0';
+    free(buffer);
+    log_info(loggerWorker, "##Query %d: Se recibe la Query. El path de operaciones es: %s", pc, archivo); // LOG OBLIGATORIO
+    //log_info(loggerWorker, "Manejando EJECUTAR: PC=%d, Archivo=%s", pc, archivo);
+    //intento implementar cheque de interrupt
+    //NUEVO!!!!!
+    while(true){
+        log_info(loggerWorker, "EJECUTANDO....EJECUTANDO....");
+        usleep(3000000);
+        log_info(loggerWorker, "Cheque Interrupcion");
+        if(interrupt){
+            interrupt = false;
+            log_info(loggerWorker, "EL QUERY FUE DESALOJADO CON EXITO");
+            break;
+        }
+
+    }
+    // TODO: Aca va el ciclo de instrucciones
+    //ejecutar_query(pc, archivo); ----->>>>>>>>> HACERRRRR!!!!!
+    log_info(loggerWorker, "FIN DE QUERY ACTUAL");
+    free(archivo);
+
+
 }
 
 // DESERIALIZAR EJECUTAR + LLAMADA A EJECUTAR_QUERY
-void manejar_ejecutar(void* buffer) {
+/*void manejar_ejecutar(void* buffer) {
     int offset = 0;
     int pc, tamarch;
     char *archivo;
@@ -179,12 +205,26 @@ void manejar_ejecutar(void* buffer) {
 
     log_info(loggerWorker, "##Query %d: Se recibe la Query. El path de operaciones es: %s", pc, archivo); // LOG OBLIGATORIO
     //log_info(loggerWorker, "Manejando EJECUTAR: PC=%d, Archivo=%s", pc, archivo);
+    //intento implementar cheque de interrupt
+    //NUEVO!!!!!
+    while(true){
+        log_info(loggerWorker, "EJECUTANDO....EJECUTANDO....");
+        usleep(3000000);
+        log_info(loggerWorker, "Cheque Interrupcion");
+        if(interrupt){
+            interrupt = false;
+            log_info(loggerWorker, "EL QUERY FUE DESALOJADO CON EXITO");
+            break;
+        }
 
+    }
     // TODO: Aca va el ciclo de instrucciones
     //ejecutar_query(pc, archivo); ----->>>>>>>>> HACERRRRR!!!!!
-
+    log_info(loggerWorker, "FIN DE QUERY ACTUAL");
     free(archivo);
-}
+
+
+}*/
 
 //revisar si la vamos a necesitar
 /*static void notificar_fin_query(int qid, const char* motivo) { 

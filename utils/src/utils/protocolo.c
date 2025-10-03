@@ -137,7 +137,7 @@ void *recibir_buffer(int socket_cliente) {
 void enviar_operacion(int socket_cliente, int cod_op){
     send(socket_cliente, &cod_op, sizeof(int), 0);
 }
-
+//cambie recibir operacion
 int recibir_operacion(int socket_cliente){
     int cod_op;
 	if(recv(socket_cliente, &cod_op, sizeof(int), MSG_WAITALL) > 0)

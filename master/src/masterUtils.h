@@ -46,6 +46,8 @@ typedef struct {
     pthread_mutex_t mutex_wcb;
 } t_wcb;
 
+
+//===============ESTRUCTURAS===============
 extern t_log* loggerMaster;
 extern t_config* config;
 extern t_config_master* config_struct; 
@@ -53,44 +55,47 @@ extern char* config_master;
 extern int cant_workers;
 extern t_dictionary* diccionario_qcb;
 extern int qid;
-/*
-extern t_list* cola_ready;
-extern t_list* cola_exec;
-extern t_list* cola_exit;*/
-// =================== MAIN Y BASIC =========================
+//===============INICIALIZACION===============
 void inicializar_master();
-void inicializar_config();
-void crear_logger ();
-void cargar_config ();
-void inicializar_diccionario();
-t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
-t_qcb* crear_query_control(char* path, int prioridad, int fd);
-void* atender_conexion(void* arg);
-void atender_QueryControl(int fd);
-void atender_Worker(int fd);
-void* inicializar_servidor_multihilo(void* arg);
-void inicializar_semaforos();
 void inicializar_listas();
+void inicializar_config();
+void inicializar_diccionario();
+void inicializar_semaforos();
+void cargar_config ();
+t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
+void crear_logger ();
+//===============CONEXIONES===============
+void* inicializar_servidor_multihilo(void* arg);
+void* atender_conexion(void* arg);
+void atender_Worker(int fd);
+void atender_QueryControl(int fd);
+void mandar_a_desalojar(t_qcb* qcb);
+//===============ESTRUCTURAS ADMIN.===============
 
-void agregar_a_ready(t_qcb* qcb);
-void agregar_a_exec(t_qcb* qcb);
-void agregar_a_exit(t_qcb* qcb);
-
-// =================== PLANIFICADOR =========================
+    //===============QUERY_CONTROL===============
+t_qcb* crear_query_control(char* path, int prioridad, int fd);
+void actualizar_Estado(t_qcb* qcb, t_estado nuevo_estado);
+t_qcb* buscar_qcb_por_ID(int qid);
+t_qcb* buscar_qcb_mayor_prio();
+void eliminar_qcb_diccionario(int qid);
+void eliminar_qcb(void* element);
+    //===============WORKER===============
+//void crear_wcb (int id, int socket);
+t_wcb *crear_wcb(int id, int socket);
+t_wcb *buscar_worker_por_qid(int qid);
+t_wcb* buscar_worker_libre();
+t_wcb* buscar_wcb_menor_prio();
+//===============PLANIFICACION===============
+void *planificar_exit(void *arg);
 void* inicializar_planificador(void* arg);
 void planificador_fifo();
 void planificador_prioridades();
-void *planificar_exit(void *arg);
+void* hilo_aging(void* arg);
 void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker);
-t_wcb* buscar_worker_libre();
-void crear_wcb (int id, int socket);
-t_qcb* buscar_qcb_mayor_prio();
-t_wcb* buscar_wcb_menor_prio();
-t_qcb* buscar_qcb_por_ID(int qid);
-void actualizar_Estado(t_qcb* qcb, t_estado nuevo_estado);
-void mandar_a_desalojar(t_qcb* qcb);
-// =================== EXIT =========================
-void eliminar_qcb_diccionario(int qid);
-void eliminar_qcb(void* element);
+//===============COLAS===============
+void agregar_a_ready(t_qcb* qcb);
+void agregar_a_exec(t_qcb* qcb);
+void agregar_a_exit(t_qcb* qcb);
+void remover_qcb_cola(int qid, t_list *cola, pthread_mutex_t mutexCola);
 
 #endif
