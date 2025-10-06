@@ -181,6 +181,10 @@ void atender_Worker(int fd){
                     t_qcb *aDesalojar = buscar_qcb_por_ID(wcb->qid_asig);
                     agregar_a_exit(aDesalojar);
                     sem_post(&hay_en_Exit);
+                    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    // COMENTARIO DANTE: Habría que eliminar tmb al wcb de la lista de wcbs y su estructura
+                    // hacerle el free para que deje de ocupar memoria. Fijarse eso en memory leaks despues
+                    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 }
                 return;
             default:
@@ -261,6 +265,11 @@ void mandar_a_desalojar(t_qcb* qcb) {
         return;
         //actualizar_Estado(qcb, READY);
         //agregar_a_ready(qcb);
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // COMENTARIO DANTE: NO SÉ SI DEBERÍA PASAR A READY, SI CUANDO TERMINA LA LLAMADA A ESTA
+        // FUNCION VAS A PASARLO A EXIT PORQUE SE DESCONECTO?!
+        // También habría que decir que en el wcb del worker que está libre con su bool de la estructura
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         //sem_post(&replanificar);
     }
     log_info(loggerMaster, "NO SE ENCONTRO a worker ID <%d>", worker->wid);
