@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <commons/log.h>
 #include <commons/config.h>
+#include <stdatomic.h>
 typedef struct {
     char* modulo;
     char* ip_master;

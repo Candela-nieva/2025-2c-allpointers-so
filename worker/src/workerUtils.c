@@ -8,9 +8,8 @@ t_config_worker* config_struct = NULL;
 int socket_storage;
 int socket_master;
 char* config_worker;
-//implementar mutex para este bool, y posiblemente conviene usar un flag para esto
-// atomic_int interrupt_flag = ATOMIC_VAR_INIT(0);
-bool interrupt = false;
+atomic_int hay_interrupt = ATOMIC_VAR_INIT(0);
+
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_worker)); //Reserva memoria
     config_struct->modulo = NULL;
@@ -133,7 +132,7 @@ void esperar_queries(){
             //NUEVO!!!!!
             case DESALOJO :
                 log_info(loggerWorker, "Master ha indicado DESALOJO de Query actual.");
-                interrupt = true;
+                atomic_store(&hay_interrupt,1);
                 break;
 
             case FIN_QUERY: // Master avisa que NO hay mas queries para que este worker ejecute
@@ -149,11 +148,14 @@ void esperar_queries(){
     }
 }
 // DESERIALIZAR EJECUTAR + LLAMADA A EJECUTAR_QUERY
-void* manejar_ejecutar(void* buffer) {
+void* manejar_ejecutar(void *buffer) {
     int offset = 0;
-    int pc, tamarch;
+    int qid, pc, tamarch;
     char *archivo;
     
+    memcpy(&(qid), buffer + offset, sizeof(int));
+    offset += sizeof(int);
+
     memcpy(&(pc), buffer + offset, sizeof(int));
     offset += sizeof(int);
     
@@ -164,7 +166,7 @@ void* manejar_ejecutar(void* buffer) {
     memcpy(archivo, buffer + offset, tamarch);
     archivo[tamarch] = '\0';
     free(buffer);
-    log_info(loggerWorker, "##Query %d: Se recibe la Query. El path de operaciones es: %s", pc, archivo); // LOG OBLIGATORIO
+    log_info(loggerWorker, "##Query %d: Se recibe la Query. El path de operaciones es: %s", qid, archivo); // LOG OBLIGATORIO
     //log_info(loggerWorker, "Manejando EJECUTAR: PC=%d, Archivo=%s", pc, archivo);
     //intento implementar cheque de interrupt
     //NUEVO!!!!!
@@ -174,8 +176,8 @@ void* manejar_ejecutar(void* buffer) {
         ++pc;
         log_info(loggerWorker, "PC actualizado a %d.", pc);
         log_info(loggerWorker, "Cheque Interrupcion");
-        if(interrupt){
-            interrupt = false;
+        if(atomic_load(&hay_interrupt) == 1){
+            atomic_store(&hay_interrupt,0);
             log_info(loggerWorker, "EL QUERY FUE DESALOJADO CON EXITO");
             t_paquete *paquete = crear_paquete(PC_ACTUALIZADO);
             agregar_a_paquete(paquete,&pc,sizeof(int));

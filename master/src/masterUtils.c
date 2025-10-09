@@ -180,6 +180,9 @@ void atender_Worker(int fd){
             //case EXIT_QUERY:
             case -1:
                 log_info(loggerMaster, "DESCONEXION del WORKER <%d>", id_worker);
+                pthread_mutex_lock(&cant_workers);
+                -- cant_workers;
+                pthread_mutex_unlock(&cant_workers);
                 if(wcb->qid_asig >= 0){
                     //podria traer errores si al wcb le quedo el qid de una query que termino REVISAR
                     log_info(loggerMaster, "Mato la query ejecutando en worker, QUERY <%d>", wcb->qid_asig);
@@ -263,9 +266,15 @@ void mandar_a_desalojar(t_qcb* qcb) {
         int pc_actualizado;
         memcpy(&pc_actualizado, buffer, sizeof(int));
         free(buffer);
+        pthread_mutex_lock(&(qcb->mutex_qcb));
         qcb->pc = pc_actualizado;
+        pthread_mutex_unlock(&(qcb->mutex_qcb));
+        pthread_mutex_lock(&(worker->mutex_wcb));
         worker->qid_asig = -1;
+        worker->esta_libre = true;
+        pthread_mutex_unlock(&(worker->mutex_wcb));
         log_info(loggerMaster, "Query %d desalojada del Worker %d, PC actualizado a %d", qcb->qid, worker->wid, qcb->pc);
+        sem_post(&hay_worker_libre);
         return;
     }
     log_info(loggerMaster, "NO SE ENCONTRO a worker ID <%d>", worker->wid);
@@ -313,28 +322,34 @@ void actualizar_Estado(t_qcb* qcb, t_estado nuevo_estado){
 t_qcb* buscar_qcb_por_ID(int qid){
     char *key = malloc(sizeof(int)); //eso no seria muy chico?
     sprintf(key, "%d",qid);
+    pthread_mutex_lock(&mutex_diccionario_qcb);
     t_qcb* qcb = dictionary_get(diccionario_qcb, key);
+    pthread_mutex_unlock(&mutex_diccionario_qcb);
     free(key);
     return qcb;
 }
 
 t_qcb* buscar_qcb_mayor_prio(){
     log_info(loggerMaster, "Buscando QCB de mayor prioridad");
-    t_qcb*  qcb_prio = list_get(cola_ready,0);
+    pthread_mutex_lock(&mutex_cola_ready);
+    t_qcb* qcb_prio = list_get(cola_ready,0);
+    pthread_mutex_unlock(&mutex_cola_ready);
     int indice = 0;
     //ESTOS LOCKS ESTABAN COMPLICADOS
     for(int i = 1; i < list_size(cola_ready); i++){
-        //pthread_mutex_unlock(&mutex_cola_ready);
+
         log_info(loggerMaster, "Buscando LISTA");
+        pthread_mutex_lock(&mutex_cola_ready);
         t_qcb* qcb_actual = list_get(cola_ready,i);
-        //pthread_mutex_lock(&(qcb_actual->mutex_qcb));
-        //pthread_mutex_lock(&(qcb_prio->mutex_qcb));
+        pthread_mutex_unlock(&mutex_cola_ready);
+        
+        pthread_mutex_lock(&(qcb_actual->mutex_qcb));
+
         if(qcb_prio->prioridad > qcb_actual->prioridad){
-            //pthread_mutex_unlock(&(qcb_prio->mutex_qcb));
-            //pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
             qcb_prio = qcb_actual;
             indice = i;
         }
+        pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
     }
     log_info(loggerMaster, "ENCONTRADO, QCB ID %d", qcb_prio->qid);
     pthread_mutex_lock(&mutex_cola_ready);
@@ -387,15 +402,16 @@ t_wcb *buscar_worker_por_qid(int qid) {
     return NULL;
 }
 
-
-
 t_wcb *buscar_worker_libre(){
+    pthread_mutex_lock(&mutex_workers);
     for(int i = 0; i < list_size(lista_workers); i++){
         t_wcb *candidato = list_get(lista_workers, i);
         if(candidato->esta_libre){
+            pthread_mutex_unlock(&mutex_workers);
             return candidato;
         }
     }
+    pthread_mutex_unlock(&mutex_workers);
     return NULL;
 }
 
@@ -453,7 +469,7 @@ void planificador_fifo(){
         sem_wait(&replanificar);
         log_info(loggerMaster, "Hay proceso en READY");
         sem_wait(&hay_worker_libre);
-        t_qcb* qcb_exec = list_get(cola_ready,0); // no sería list_remove? y tene un mutex protegiendo la cola
+        t_qcb* qcb_exec = list_remove(cola_ready,0); // no sería list_remove? y tene un mutex protegiendo la cola
         log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
         t_wcb* wcb_elegido = buscar_worker_libre();
         agregar_a_exec(qcb_exec);
@@ -522,10 +538,12 @@ void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker) {
     pthread_mutex_unlock(&worker->mutex_wcb);
     log_info(loggerMaster, "Mandando a ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>, Al worker %d", qcb->ruta_arch, qcb->prioridad, qcb->qid,worker->wid);
     t_paquete* paquete = crear_paquete(EJECUTAR);
+    agregar_a_paquete(paquete, &(qcb->qid), sizeof(int));
     agregar_a_paquete(paquete, &(qcb->pc), sizeof(int));
     agregar_a_paquete_string(paquete, qcb->ruta_arch, strlen(qcb->ruta_arch));
+    log_info(loggerMaster, "PAQUETE CREADO : ENVIANDO");
     enviar_paquete(paquete, worker->socket);
-
+    log_info(loggerMaster, "PAQUETE CREADO : ENVIADO!!!!");
     eliminar_paquete(paquete);
 }    
 
