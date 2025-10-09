@@ -187,6 +187,7 @@ void atender_Worker(int fd){
                     //podria traer errores si al wcb le quedo el qid de una query que termino REVISAR
                     log_info(loggerMaster, "Mato la query ejecutando en worker, QUERY <%d>", wcb->qid_asig);
                     t_qcb *aDesalojar = buscar_qcb_por_ID(wcb->qid_asig);
+                    enviar_mensaje_exit(aDesalojar->socket, DESCONEXION_WORKER);
                     agregar_a_exit(aDesalojar);
                     sem_post(&hay_en_Exit);
                     //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -201,6 +202,23 @@ void atender_Worker(int fd){
                 return;
         }
     }
+}
+
+void enviar_mensaje_exit(int socketQuery, t_motivo motivo){
+    t_paquete *paquete = crear_paquete(MASTER_TO_QC_END);
+    switch (motivo)
+    {
+        case QUERY_EXIT:
+            char *motivoFinQuery = "FIN DE QUERY";
+            agregar_a_paquete_string(paquete, motivoFinQuery, strlen(motivoFinQuery));
+            break;
+        default:
+            char *motivoDesconexion = "DESCONEXION WORKER";
+            agregar_a_paquete_string(paquete, motivoDesconexion, strlen(motivoDesconexion));
+            break;
+    }
+    enviar_paquete(paquete, socketQuery);
+    eliminar_paquete(paquete);
 }
 
 void atender_QueryControl(int fd){
@@ -393,12 +411,17 @@ t_wcb *crear_wcb(int id, int socket) {
 }
 
 t_wcb *buscar_worker_por_qid(int qid) {
+    pthread_mutex_lock(&mutex_workers);
     for(int i = 0; i < list_size(lista_workers); i++){
         t_wcb *candidato = list_get(lista_workers, i);
+        pthread_mutex_lock(&candidato->mutex_wcb);
         if(candidato->qid_asig == qid){
+            pthread_mutex_unlock(&candidato->mutex_wcb);
+            pthread_mutex_unlock(&mutex_workers);
             return candidato;
         }
     }
+    pthread_mutex_unlock(&mutex_workers);
     return NULL;
 }
 
@@ -418,16 +441,23 @@ t_wcb *buscar_worker_libre(){
 t_wcb* buscar_wcb_menor_prio() {
     //ESTA FUNCION SE LLAMABA EN UN INSTANTE ERRONEO
     
+    pthread_mutex_lock(&mutex_workers);
     t_wcb* wcb_prio = list_get(lista_workers,0);
+    pthread_mutex_unlock(&mutex_workers);
     t_qcb* qcb_prio = buscar_qcb_por_ID(wcb_prio->qid_asig);
+
+    pthread_mutex_lock(&mutex_workers);
     for(int i = 1; i < list_size(lista_workers); i++){
         t_wcb* wcb_actual = list_get(lista_workers,i);
         t_qcb* qcb_actual = buscar_qcb_por_ID(wcb_prio->qid_asig);
+        pthread_mutex_lock(&(qcb_actual->mutex_qcb));
         if(qcb_prio->prioridad < qcb_actual->prioridad){
             wcb_prio = wcb_actual;
             qcb_prio = qcb_actual;
         }
+        pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
     }
+    pthread_mutex_unlock(&mutex_workers);
     return wcb_prio;
 }
 

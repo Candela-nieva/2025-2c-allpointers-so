@@ -50,15 +50,18 @@ void escuchar_master(int socket_master) {
                 char* contenido = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
                 log_info(loggerQueryCTRL, "## Lectura realizada: Archivo %s, contenido: %s", file_tag, contenido); // LOG OBLIGATORIO
                 free(file_tag);
-                free(contenido);
-                break;*/
+                free(contenido);*/
+                recibir_mensaje_read(socket_master);
+                break;
             //MENSAJE FIN_QUERY
             case MASTER_TO_QC_END:
-               /* char* motivo = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
+                
+                /*char* motivo = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
                 log_info(loggerQueryCTRL, "## Query Finalizada - %s", motivo); // LOG OBLIGATORIO
                 free(motivo);
-                eliminar_paquete(paquete);
-                //close(socket_master);
+                eliminar_paquete(paquete);*/
+                recibir_mensaje_exit(socket_master);
+                close(socket_master);
                 return; // Salimos de la función y terminamos la escucha*/
             case -1:
                 log_info(loggerQueryCTRL, "El Master ha cerrado la conexión");
@@ -70,6 +73,25 @@ void escuchar_master(int socket_master) {
         }
         //eliminar_paquete(paquete);
     }
+}
+
+void recibir_mensaje_read(int socket_master){
+//completar
+}
+
+
+void recibir_mensaje_exit(int socket_master){
+    void *buffer = recibir_buffer(socket_master);
+    char *motivo;
+    int len;
+    int offset = 0;
+    memcpy(&(len),buffer + offset, sizeof(int));
+    offset += sizeof(int);
+    motivo = malloc(len + 1);
+    memcpy(motivo,buffer + offset, len);
+    motivo[len] = '\0';
+    log_info(loggerQueryCTRL, "## Query Finalizada - <%s>", motivo); // LOG OBLIGATORIO
+    free(motivo);
 }
 
 // ------------------- FUNCIONES DE CONFIG Y LOGGER ------------------ //
