@@ -76,9 +76,8 @@ void escuchar_master(int socket_master) {
 }
 
 void recibir_mensaje_read(int socket_master){
-//completar
+    //completar
 }
-
 
 void recibir_mensaje_exit(int socket_master){
     void *buffer = recibir_buffer(socket_master);

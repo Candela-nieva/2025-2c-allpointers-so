@@ -350,17 +350,20 @@ t_qcb* buscar_qcb_por_ID(int qid){
 t_qcb* buscar_qcb_mayor_prio(){
     log_info(loggerMaster, "Buscando QCB de mayor prioridad");
     pthread_mutex_lock(&mutex_cola_ready);
-    t_qcb* qcb_prio = list_get(cola_ready,0);
-    pthread_mutex_unlock(&mutex_cola_ready);
+
+    if(list_size(cola_ready) == 0) {
+        pthread_mutex_unlock(&mutex_cola_ready);
+        log_error(loggerMaster, "Cola READY vacía al buscar mayor prioridad");
+        return NULL;
+    }
+    t_qcb* qcb_prio = list_get(cola_ready, 0);
     int indice = 0;
     //ESTOS LOCKS ESTABAN COMPLICADOS
+
     for(int i = 1; i < list_size(cola_ready); i++){
 
         log_info(loggerMaster, "Buscando LISTA");
-        pthread_mutex_lock(&mutex_cola_ready);
         t_qcb* qcb_actual = list_get(cola_ready,i);
-        pthread_mutex_unlock(&mutex_cola_ready);
-        
         pthread_mutex_lock(&(qcb_actual->mutex_qcb));
 
         if(qcb_prio->prioridad > qcb_actual->prioridad){
@@ -370,10 +373,8 @@ t_qcb* buscar_qcb_mayor_prio(){
         pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
     }
     log_info(loggerMaster, "ENCONTRADO, QCB ID %d", qcb_prio->qid);
-    pthread_mutex_lock(&mutex_cola_ready);
-    t_qcb* qcb_aExec = list_remove(cola_ready,indice);
     pthread_mutex_unlock(&mutex_cola_ready);
-    return  qcb_aExec;
+    return qcb_prio;
 
 }
 void eliminar_qcb_diccionario(int qid) {
@@ -510,26 +511,45 @@ void planificador_fifo(){
 void planificador_prioridades(){
     //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
     while(true){
-    sem_wait(&replanificar);
-        log_info(loggerMaster, "Hay proceso en READY");
+        sem_wait(&replanificar);
+        
         //sem_wait(&hay_worker_libre);
-        t_qcb* qcb_exec = buscar_qcb_mayor_prio();
-        log_info(loggerMaster, "SALI DE LA FUNCION");
-        if(cant_workers > 0)
-        {
-            log_info(loggerMaster, "BUSCANDO WORKER");
-            //t_wcb* wcb_elegido = buscar_wcb_menor_prio();
-            log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
-            t_wcb* wcb_elegido = buscar_worker_libre();
-            if(wcb_elegido){
-            agregar_a_exec(qcb_exec);
-            mandar_a_ejecutar(qcb_exec, wcb_elegido);
+        if(list_size(cola_ready) > 0){
+            log_info(loggerMaster, "Hay proceso en READY");
+            t_qcb* qcb_exec = buscar_qcb_mayor_prio();
+            log_info(loggerMaster, "SALI DE LA FUNCION");
+            if(cant_workers > 0)
+            {
+                log_info(loggerMaster, "BUSCANDO WORKER");
+                //t_wcb* wcb_elegido = buscar_wcb_menor_prio();
+                log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
+                t_wcb* wcb_elegido = buscar_worker_libre();
+                if(wcb_elegido){
+                    remover_qcb_cola(qcb_exec->qid, cola_ready, (mutex_cola_ready));
+                    agregar_a_exec(qcb_exec);
+                    mandar_a_ejecutar(qcb_exec, wcb_elegido);
+                }else{
+                    wcb_elegido = buscar_wcb_menor_prio();
+                    t_qcb *qcb_actual = buscar_qcb_por_ID(wcb_elegido->qid_asig);
+                    pthread_mutex_lock(&(qcb_exec->mutex_qcb));
+                    if(qcb_exec->prioridad < qcb_actual->prioridad){
+                        log_info(loggerMaster, "Desalojando Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_actual->ruta_arch, qcb_actual->prioridad, qcb_actual->qid);
+                        mandar_a_desalojar(qcb_actual);
+                        remover_qcb_cola(qcb_actual->qid, cola_exec, mutex_cola_exec);
+                        agregar_a_ready(qcb_actual);
+                        sem_post(&replanificar);
+                        remover_qcb_cola(qcb_exec->qid, cola_ready, mutex_cola_ready);
+                        agregar_a_exec(qcb_exec);
+                        mandar_a_ejecutar(qcb_exec, wcb_elegido);
+                    }
+                    pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
+                }
             }else{
-                wcb_elegido = buscar_wcb_menor_prio();
+                log_info(loggerMaster, "No hay workers disponibles");
+                agregar_a_ready(qcb_exec);
             }
         }else{
-            log_info(loggerMaster, "No hay workers disponibles");
-            agregar_a_ready(qcb_exec);
+            log_info(loggerMaster, "NO Hay proceso en READY");
         }
     }
 }
@@ -544,7 +564,7 @@ void* hilo_aging(void* arg){
         pthread_mutex_unlock(&(qcb->mutex_qcb));
         log_info(loggerMaster, "Aging aplicado a la Query <%s> - Id asignado: <%d>. Nueva prioridad <%d>", qcb->ruta_arch, qcb->qid, qcb->prioridad);
         if(buscar_worker_libre() == NULL){
-        sem_post(&replanificar);
+            sem_post(&replanificar);
         }
     }
     return NULL;
