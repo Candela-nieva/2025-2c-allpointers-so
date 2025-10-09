@@ -171,10 +171,17 @@ void* manejar_ejecutar(void* buffer) {
     while(true){
         log_info(loggerWorker, "EJECUTANDO....EJECUTANDO....");
         usleep(3000000);
+        ++pc;
+        log_info(loggerWorker, "PC actualizado a %d.", pc);
         log_info(loggerWorker, "Cheque Interrupcion");
         if(interrupt){
             interrupt = false;
             log_info(loggerWorker, "EL QUERY FUE DESALOJADO CON EXITO");
+            t_paquete *paquete = crear_paquete(PC_ACTUALIZADO);
+            agregar_a_paquete(paquete,&pc,sizeof(int));
+            enviar_paquete(paquete,socket_master);
+            eliminar_paquete(paquete);
+            log_info(loggerWorker, "PC %d enviado a master.", pc);
             break;
         }
 
@@ -234,7 +241,7 @@ void* manejar_ejecutar(void* buffer) {
     enviar_paquete(p, socket_master);
     eliminar_paquete(p);
 }*/
-
+//prueba
 
 // =================== CONEXION A STORAGE ======================= 
 

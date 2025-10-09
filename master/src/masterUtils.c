@@ -13,6 +13,7 @@ t_list* cola_exec;
 t_list* cola_exit;
 t_list* lista_workers;
 
+pthread_mutex_t mutex_workers;
 pthread_mutex_t mutex_cant_workers;
 pthread_mutex_t mutex_qid;
 pthread_mutex_t mutex_diccionario_qcb;
@@ -81,11 +82,13 @@ void inicializar_semaforos() {
     sem_init(&hay_worker_libre, 0, 0);
 
     pthread_mutex_init(&mutex_cant_workers, NULL);
+    pthread_mutex_init(&mutex_workers, NULL);
     pthread_mutex_init(&mutex_qid, NULL);
     pthread_mutex_init(&mutex_diccionario_qcb, NULL);
     pthread_mutex_init(&mutex_cola_ready, NULL);
     pthread_mutex_init(&mutex_cola_exec, NULL);
     pthread_mutex_init(&mutex_cola_exit, NULL);
+    
 }
 
 void cargar_config() {
@@ -173,6 +176,8 @@ void atender_Worker(int fd){
         while(true){
         op_code op = recibir_operacion(fd);
         switch(op) {
+            //case LECTURA:
+            //case EXIT_QUERY:
             case -1:
                 log_info(loggerMaster, "DESCONEXION del WORKER <%d>", id_worker);
                 if(wcb->qid_asig >= 0){
@@ -186,6 +191,7 @@ void atender_Worker(int fd){
                     // hacerle el free para que deje de ocupar memoria. Fijarse eso en memory leaks despues
                     //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 }
+                eliminar_wcb(wcb);
                 return;
             default:
                 log_info(loggerMaster, "Operacion desconocida recibida del WORKER ID <%d>", id_worker);
@@ -248,10 +254,7 @@ void mandar_a_desalojar(t_qcb* qcb) {
     log_info(loggerMaster, "Enviando Desalojo a worker ID <%d>", worker->wid);
     if(worker){
         enviar_operacion(worker->socket,DESALOJO);
-        /*t_paquete* paquete = crear_paquete(DESALOJO);
-        enviar_paquete(paquete,worker->socket);
-        eliminar_paquete(paquete);*/
-        /*int op = recibir_operacion(worker->socket);
+        int op = recibir_operacion(worker->socket);
         if(op != PC_ACTUALIZADO){
             log_error(loggerMaster, "Error al recibir confirmacion de desalojo del Worker %d para la Query %d", worker->wid, qcb->qid);
             return;
@@ -260,17 +263,10 @@ void mandar_a_desalojar(t_qcb* qcb) {
         int pc_actualizado;
         memcpy(&pc_actualizado, buffer, sizeof(int));
         free(buffer);
-        qcb->pc = pc_actualizado;*/
+        qcb->pc = pc_actualizado;
+        worker->qid_asig = -1;
         log_info(loggerMaster, "Query %d desalojada del Worker %d, PC actualizado a %d", qcb->qid, worker->wid, qcb->pc);
         return;
-        //actualizar_Estado(qcb, READY);
-        //agregar_a_ready(qcb);
-        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // COMENTARIO DANTE: NO SÉ SI DEBERÍA PASAR A READY, SI CUANDO TERMINA LA LLAMADA A ESTA
-        // FUNCION VAS A PASARLO A EXIT PORQUE SE DESCONECTO?!
-        // También habría que decir que en el wcb del worker que está libre con su bool de la estructura
-        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        //sem_post(&replanificar);
     }
     log_info(loggerMaster, "NO SE ENCONTRO a worker ID <%d>", worker->wid);
     return;
@@ -366,15 +362,6 @@ void eliminar_qcb(void* element){
 }
     //===============WORKER===============
 
-/*void crear_wcb(int id, int socket) {
-    t_wcb* wcb = malloc (sizeof(t_wcb));
-    wcb->wid = id;
-    wcb->esta_libre = true;
-    wcb->qid_asig = -1; //-1 si no tiene query asignada
-    wcb->socket = socket;
-    pthread_mutex_init(&wcb->mutex_wcb, NULL);
-    list_add(lista_workers, wcb);
-}*/
 
 t_wcb *crear_wcb(int id, int socket) {
     t_wcb* wcb = malloc (sizeof(t_wcb));
@@ -383,7 +370,10 @@ t_wcb *crear_wcb(int id, int socket) {
     wcb->qid_asig = -1; //-1 si no tiene query asignada
     wcb->socket = socket;
     pthread_mutex_init(&wcb->mutex_wcb, NULL);
+    //MUTEX PARA LISTA DE WORKERS
+    pthread_mutex_lock(&mutex_workers);
     list_add(lista_workers, wcb);
+    pthread_mutex_unlock(&mutex_workers);
     return wcb;
 }
 
@@ -398,6 +388,7 @@ t_wcb *buscar_worker_por_qid(int qid) {
 }
 
 
+
 t_wcb *buscar_worker_libre(){
     for(int i = 0; i < list_size(lista_workers); i++){
         t_wcb *candidato = list_get(lista_workers, i);
@@ -410,6 +401,7 @@ t_wcb *buscar_worker_libre(){
 
 t_wcb* buscar_wcb_menor_prio() {
     //ESTA FUNCION SE LLAMABA EN UN INSTANTE ERRONEO
+    
     t_wcb* wcb_prio = list_get(lista_workers,0);
     t_qcb* qcb_prio = buscar_qcb_por_ID(wcb_prio->qid_asig);
     for(int i = 1; i < list_size(lista_workers); i++){
@@ -423,7 +415,11 @@ t_wcb* buscar_wcb_menor_prio() {
     return wcb_prio;
 }
 
-
+void eliminar_wcb(t_wcb *aEliminar){
+    list_remove_element(lista_workers,aEliminar);
+    close(aEliminar->socket);
+    free(aEliminar);
+}
 
 //===============PLANIFICACION===============
 

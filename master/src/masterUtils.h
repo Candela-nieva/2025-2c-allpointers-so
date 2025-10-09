@@ -85,6 +85,7 @@ t_wcb *crear_wcb(int id, int socket);
 t_wcb *buscar_worker_por_qid(int qid);
 t_wcb* buscar_worker_libre();
 t_wcb* buscar_wcb_menor_prio();
+void eliminar_wcb(t_wcb *aEliminar);
 //===============PLANIFICACION===============
 void *planificar_exit(void *arg);
 void* inicializar_planificador(void* arg);
