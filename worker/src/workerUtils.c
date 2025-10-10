@@ -243,7 +243,6 @@ void* manejar_ejecutar(void *buffer) {
     enviar_paquete(p, socket_master);
     eliminar_paquete(p);
 }*/
-//prueba
 
 // =================== CONEXION A STORAGE ======================= 
 
