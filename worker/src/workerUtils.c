@@ -10,6 +10,12 @@ int socket_master;
 char* config_worker;
 atomic_int hay_interrupt = ATOMIC_VAR_INIT(0);
 
+// Sincronización entre hilos
+pthread_mutex_t mutex_storage_ready= PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond_storage_ready = PTHREAD_COND_INITIALIZER;
+bool storage_ready = false;
+// ----------------------
+
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_worker)); //Reserva memoria
     config_struct->modulo = NULL;
@@ -66,6 +72,9 @@ void crear_logger () {
     loggerWorker=iniciar_logger("worker.log","WORKER",true, log_level_from_string(config_struct->log_level));
 }
 
+// =================== CONEXION A MASTER =======================
+// hola
+
 void* iniciar_conexion_master(void* arg){
     
     if(arg == NULL){
@@ -76,7 +85,16 @@ void* iniciar_conexion_master(void* arg){
     int id_worker = *(int*)arg;
     free(arg); // Liberamos el puntero
     
-    log_info(loggerWorker, "INTENTO HANDSHAKE CON MASTER");
+    // Esperamos a que el storage esté listo antes de proceder
+    pthread_mutex_lock(&mutex_storage_ready);
+    while(!storage_ready) {
+        log_info(loggerWorker, "Esperando a que Storage esté listo antes de conectar con Master...");
+        pthread_cond_wait(&cond_storage_ready, &mutex_storage_ready);
+    }
+    pthread_mutex_unlock(&mutex_storage_ready);
+
+    // Ahora podemos proceder con la conexión a Master
+    log_info(loggerWorker, "Handshake con Storage completado. Iniciando conexión/handshake con Master...");
     
     socket_master = crear_conexion(config_struct->ip_master, config_struct->puerto_master);
     if(socket_master == -1) { 
@@ -90,6 +108,11 @@ void* iniciar_conexion_master(void* arg){
     eliminar_paquete(paquete);
     log_info(loggerWorker, "Handshake enviado a Master - Worker ID enviado: %d", id_worker);
     
+    // Despues de enviar el HANDSHAKE a Master, deberiamos recibir un HANDSHAKE_OK, antes de proceder a esperar queries??????
+    // OPCIONAL: recibir HANDSHAKE_OK (si Master lo envía)
+    // int op = recibir_operacion(socket_master);
+    // if (op == HANDSHAKE_OK) { log_info(...) } else { ... }
+
     esperar_queries();
 
     // Cuando esperar_queries termine, cerramos la conexión y finalizamos el hilo
@@ -166,6 +189,7 @@ void* manejar_ejecutar(void *buffer) {
     memcpy(archivo, buffer + offset, tamarch);
     archivo[tamarch] = '\0';
     free(buffer);
+    
     log_info(loggerWorker, "##Query %d: Se recibe la Query. El path de operaciones es: %s", qid, archivo); // LOG OBLIGATORIO
     //log_info(loggerWorker, "Manejando EJECUTAR: PC=%d, Archivo=%s", pc, archivo);
     //intento implementar cheque de interrupt
@@ -188,14 +212,217 @@ void* manejar_ejecutar(void *buffer) {
         }
 
     }
-    // TODO: Aca va el ciclo de instrucciones
-    //ejecutar_query(pc, archivo); ----->>>>>>>>> HACERRRRR!!!!!
+    
+    ejecutar_query(pc, archivo, qid); 
     log_info(loggerWorker, "FIN DE QUERY ACTUAL");
     free(archivo);
 
+    return NULL;
+}
+
+//////////////////////////////// query interpreter ////////////////////////////
+
+// Limpia las líneas leídas de archivos para que no tengan saltos de línea al final, 
+// y así procesarlas correctamente en el query interpreter.
+static void trim_newline(char* s) {
+    if(!s) return;
+    size_t len = strlen(s);
+    while(len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) {
+        s[len - 1] = '\0';
+        len--;
+    }
+}
+
+static void ejecutar_instruccion(const char* instruccion, int qid, int pc) {
+    if(!instruccion) return;
+    
+    char* copia = strdup(instruccion); // Hacemos una copia para no modificar la original
+    trim_newline(copia);               // Limpiamos la copia
+
+    char* op = strtok(copia, " ");     // Tokenizamos para obtener la operación
+    if(!op) {
+        log_info(loggerWorker, "Query %d: - Instrucción vacía en PC=%d", qid, pc);
+        free(copia);
+        return;
+    }
+
+    if(strcmp(op, "CREATE") == 0) {
+        char* tag = strtok(NULL, " ");
+        log_info(loggerWorker, "Query %d: - Instrucción realizada: CREATE", qid);
+        // STUB: enviar CREATE a Storage (ya tenés ejecutar_create)
+    }
+
+    else if (strcmp(op, "TRUNCATE") == 0) {
+        char* archivo_tag = strtok(NULL, " ");
+        char* tam = strtok(NULL, " ");
+        log_info(loggerWorker, "Query %d: - Instrucción realizada: TRUNCATE", qid);
+        // STUB
+    }
+    
+    else if (strcmp(op, "WRITE") == 0) {
+        char* archivo_tag = strtok(NULL, " ");
+        char* direccion = strtok(NULL, " ");
+        char* contenido = strtok(NULL, ""); // resto con espacios
+        log_info(loggerWorker, "Query %d: - Instrucción realizada: WRITE", qid);
+        // STUB: escribir en memoria (o solicitar páginas)
+    }
+    
+    else if (strcmp(op, "READ") == 0) {
+        char* archivo_tag = strtok(NULL, " ");
+        char* direccion = strtok(NULL, " ");
+        char* tam = strtok(NULL, " ");
+        log_info(loggerWorker, "Query %d: - Instrucción realizada: READ", qid);
+        log_info(loggerWorker, "## Se envía un mensaje de lectura de la Query %d al Master (simulado).", qid);
+    }
+
+    else if (strcmp(op, "TAG") == 0) {
+        char* origen = strtok(NULL, " ");
+        char* destino = strtok(NULL, "");
+        log_info(loggerWorker, "Query %d: - Instrucción realizada: TAG", qid);
+    }
+    
+    else if (strcmp(op, "COMMIT") == 0) {
+        char* archivo_tag = strtok(NULL, " ");
+        log_info(loggerWorker, "Query %d: - Instrucción realizada: COMMIT", qid);
+    }
+    
+    else if (strcmp(op, "FLUSH") == 0) {
+        char* archivo_tag = strtok(NULL, " ");
+        log_info(loggerWorker, "Query %d: - Instrucción realizada: FLUSH", qid);
+    }
+    
+    else if (strcmp(op, "DELETE") == 0) {
+        char* archivo_tag = strtok(NULL, " ");
+        log_info(loggerWorker, "Query %d: - Instrucción realizada: DELETE", qid);
+    }
+    
+    else if (strcmp(op, "END") == 0) {
+        log_info(loggerWorker, "Query %d: - Instrucción realizada: END", qid);
+    }
+    
+    
+    else {
+        log_info(loggerWorker, "Query %d: - Instrucción desconocida: %s", qid, instruccion);
+    }
+
+    free(copia);
 
 }
 
+// Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
+void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
+    
+    if(!archivo_relativo) {
+        log_info(loggerWorker, "Error: Ruta de archivo de Query %d no proporcionada.", qid);
+        return;
+    }
+    
+    // Construir la ruta completa al archivo de query (PATH_SCRIPTS + "/" + archivo_relativo)
+    char ruta_completa[1024];
+    if (config_struct && config_struct->path_scripts) {
+        snprintf(ruta_completa, sizeof(ruta_completa), "%s/%s", config_struct->path_scripts, archivo_relativo);
+    } else {
+        // fallback: usar archivo_relativo tal cual
+        strncpy(ruta_completa, archivo_relativo, sizeof(ruta_completa)-1);
+        ruta_completa[sizeof(ruta_completa)-1] = '\0';
+    }
+
+    FILE *file = fopen(ruta_completa, "r");
+    if(!file){
+        log_info(loggerWorker, "Query %d: Error al abrir el archivo de Query: %s", qid, ruta_completa);
+        return;
+    }
+    
+    char linea[2048];
+    int pc = 0;
+    // Saltar hasta pc_inicial
+    while (fgets(linea, sizeof(linea), file) != NULL) {
+        if (pc < pc_inicial) {
+            ++pc;
+            continue;
+        }
+
+        trim_newline(linea);
+
+        // LOG OBLIGATORIO
+        log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea);
+        //Fetch Instrucción: “## Query <QUERY_ID>: FETCH - Program Counter: <PROGRAM_COUNTER> - <INSTRUCCIÓN>3”. 
+        
+        // Ejecutar la instrucción
+        ejecutar_instruccion(linea, qid, pc);
+        
+        // Retardo simulado
+        if (retardo_memoria > 0) { // retardoo segun instruc
+            usleep((useconds_t)retardo_memoria * 1000);
+        }
+
+        ++pc;
+
+        // Comprobar interrupción (desalojo)
+        if (atomic_load(&hay_interrupt) == 1) {
+            atomic_store(&hay_interrupt, 0);
+            t_paquete *paquete = crear_paquete(PC_ACTUALIZADO);
+            agregar_a_paquete(paquete, &pc, sizeof(int));
+            enviar_paquete(paquete, socket_master);
+            eliminar_paquete(paquete);
+            log_info(loggerWorker, "PC %d enviado a master tras desalojo.", pc);
+            fclose(file);
+            return;
+        }
+
+        // Si era END terminamos la Query
+        if (strncmp(linea, "END", 3) == 0) {
+            log_info(loggerWorker, "##Query %d: Query finalizada (END)", qid);
+            fclose(file);
+            return;
+        }
+    }
+
+    log_info(loggerWorker, "##Query %d: Fin de archivo alcanzado (EOF).", qid);
+    fclose(file);
+}
+
+
+// esto se tiene que borrar luego
+
+// Parseo y dispatch de instrucciones
+/*void ejecutar_instruccion(char* instruccion) {
+    char op[16], arg1[64], arg2[64], arg3[128];
+    int n = sscanf(instruccion, "%s %s %s %s", op, arg1, arg2, arg3); // forma muy improvisada de chequear la cantidad de parametros pasados
+    if (strcmp(op, "CREATE") == 0 && n >= 2) {
+        ejecutar_create(arg1);
+    } else if (strcmp(op, "TRUNCATE") == 0 && n >= 3) {
+        ejecutar_truncate(arg1, atoi(arg2));
+    } else if (strcmp(op, "WRITE") == 0 && n >= 4) {
+        ejecutar_write(arg1, atoi(arg2), arg3);
+    } else if (strcmp(op, "READ") == 0 && n >= 4) {
+        ejecutar_read(arg1, atoi(arg2), atoi(arg3));
+    } else if (strcmp(op, "TAG") == 0 && n >= 3) {
+        ejecutar_tag(arg1, arg2);
+    } else if (strcmp(op, "COMMIT") == 0 && n >= 2) {
+        ejecutar_commit(arg1);
+    } else if (strcmp(op, "FLUSH") == 0 && n >= 2) {
+        ejecutar_flush(arg1);
+    } else if (strcmp(op, "DELETE") == 0 && n >= 2) {
+        ejecutar_delete(arg1);
+    } else if (strcmp(op, "END") == 0) {
+        ejecutar_end();
+    } else {
+        log_error(loggerWorker, "Instrucción inválida: %s", instruccion);
+    }
+}
+
+void ejecutar_create(char* file_tag){
+    t_paquete* paquete = crear_paquete(CREATE);
+    int tam = strlen(file_tag) + 1;
+    agregar_a_paquete(paquete, file_tag, tam);
+    int tamanio = 0;
+    agregar_a_paquete(paquete, &tamanio, sizeof(int));
+
+    enviar_paquete(paquete, socket_storage);
+    eliminar_paquete(paquete);
+    log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", file_tag);
+}*/
 // DESERIALIZAR EJECUTAR + LLAMADA A EJECUTAR_QUERY
 /*void manejar_ejecutar(void* buffer) {
     int offset = 0;
@@ -243,6 +470,7 @@ void* manejar_ejecutar(void *buffer) {
     enviar_paquete(p, socket_master);
     eliminar_paquete(p);
 }*/
+//prueba
 
 // =================== CONEXION A STORAGE ======================= 
 
@@ -255,6 +483,7 @@ void* iniciar_conexion_storage(void* arg){
         pthread_exit(NULL); // Terminar el hilo si hay un error
     }
     
+    // Enviar handshake a Storage
     enviar_operacion(socket_storage, HANDSHAKE_WORKER); // Enviar el handshake a Memoria
     //recibir tamanio de pags
     int op = recibir_operacion(socket_storage);
@@ -274,12 +503,24 @@ void* iniciar_conexion_storage(void* arg){
 // tuve que cambiar los loggers de cargar_config de qc y worker a fprintfs solo para testeo por ahora, estabamos usando loggers antes de seren creados 
     int tamanio_pag = 0;
     void* buffer = recibir_buffer(socket_storage);
+    
+    if (buffer == NULL) {
+        log_error(loggerWorker, "Error al recibir buffer de tamaño de bloque.");
+        close(socket_storage);
+        return NULL;
+    }
+    
     memcpy(&tamanio_pag, buffer, sizeof(int));
     free(buffer);
 
     log_info(loggerWorker, "Tamanio de pagina recibido de Storage: %d", tamanio_pag);
-    
     log_info(loggerWorker, "Worker listo para interactuar con Storage");
     
+    // Señalamos que el storage ya está listo
+    pthread_mutex_lock(&mutex_storage_ready); 
+    storage_ready = true;
+    pthread_cond_signal(&cond_storage_ready);
+    pthread_mutex_unlock(&mutex_storage_ready);
+
     return NULL; 
 }
