@@ -300,7 +300,6 @@ static void ejecutar_instruccion(const char* instruccion, int qid, int pc) {
         log_info(loggerWorker, "Query %d: - Instrucción realizada: END", qid);
     }
     
-    
     else {
         log_info(loggerWorker, "Query %d: - Instrucción desconocida: %s", qid, instruccion);
     }

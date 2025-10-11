@@ -2,9 +2,11 @@
 
 int retardo_operacion;
 int retardo_acceso_bloque;
-
+bool fresh_start;
 int fs_size;
 int tam_bloq;
+int[] arrayDeBits;
+t_bitarray* bitarray;
 
 t_log* loggerStorage = NULL;
 t_config *config = NULL;
@@ -43,7 +45,22 @@ void cargar_config_superBlock(){
 
 void inicializar_montaje(){
     cargar_config_superBlock();
+    verificar_freshStart();
+    crear_bitmap();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
+}
+
+void crear_bitmap() {
+    //char *pathBitmap = strcat(config_struct->punto_montaje,"/bitmap.bin/");
+    char pathBitmap[256];
+    sprintf(pathBitmap, "%s/bitmap.bin",config_struct->punto_montaje);
+    log_info(loggerStorage, "EL PATH DEL BITMAP ES %s",pathBitmap);
+    FILE *archBitmap = fopen(pathBitmap,"wb+");
+    int fildes = fileno(archBitmap);
+    int tamanio = fs_size / tam_bloq;
+    ftruncate(fildes, tamanio);
+    void* mappeo = mmap(NULL, tamanio, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
+    bitarray = bitarray_create_with_mode(mappeo, tamanio, LSB_FIRST);
 }
 
 void cargar_config() {
@@ -58,6 +75,15 @@ void cargar_config() {
 
     retardo_operacion = atoi(config_struct->retardo_operacion);
     retardo_acceso_bloque = atoi(config_struct->retardo_acceso_bloque);
+
+}
+
+void verificar_freshStart(){
+    if(strcmp((config_struct->fresh_start), "TRUE") == 0){
+        fresh_start = true;
+    }else{
+        fresh_start = false;
+    }
 }
 
 // Función para iniciar el logger
@@ -103,3 +129,4 @@ void iniciar_servidor_multihilo(void)
     close(fd_sv);
     return;
 }
+

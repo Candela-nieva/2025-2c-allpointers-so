@@ -7,8 +7,9 @@
 #include <sys/socket.h>
 #include <commons/log.h>
 #include <commons/config.h>
+#include <commons/bitarray.h>
 #include <utils/chiches.h>
-
+#include <sys/mman.h>
 typedef struct {
     char* modulo;
     char* puerto_escucha;
@@ -39,4 +40,6 @@ void inicializar_montaje();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
 void iniciar_servidor_multihilo(void);
 void cargar_config_superBlock();
+void crear_bitmap();
+
 #endif
