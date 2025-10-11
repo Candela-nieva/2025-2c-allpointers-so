@@ -284,15 +284,24 @@ void mandar_a_desalojar(t_qcb* qcb) {
         int pc_actualizado;
         memcpy(&pc_actualizado, buffer, sizeof(int));
         free(buffer);
+
         pthread_mutex_lock(&(qcb->mutex_qcb));
         qcb->pc = pc_actualizado;
         pthread_mutex_unlock(&(qcb->mutex_qcb));
+
         pthread_mutex_lock(&(worker->mutex_wcb));
         worker->qid_asig = -1;
         worker->esta_libre = true;
         pthread_mutex_unlock(&(worker->mutex_wcb));
+
         log_info(loggerMaster, "Query %d desalojada del Worker %d, PC actualizado a %d", qcb->qid, worker->wid, qcb->pc);
-        sem_post(&hay_worker_libre);
+
+        if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
+            sem_post(&hay_worker_libre);
+        }else{
+            sem_post(&replanificar);
+        }
+        log_info(loggerMaster, "SIGO...");
         return;
     }
     log_info(loggerMaster, "NO SE ENCONTRO a worker ID <%d>", worker->wid);
@@ -350,6 +359,26 @@ t_qcb* buscar_qcb_por_ID(int qid){
 t_qcb* buscar_qcb_mayor_prio(){
     log_info(loggerMaster, "Buscando QCB de mayor prioridad");
     pthread_mutex_lock(&mutex_cola_ready);
+    t_qcb* qcb_prio = list_get(cola_ready, 0);
+    for(int i = 1; i < list_size(cola_ready); i++){
+
+        log_info(loggerMaster, "Buscando LISTA");
+        t_qcb* qcb_actual = list_get(cola_ready,i);
+        pthread_mutex_lock(&(qcb_actual->mutex_qcb));
+        if(qcb_prio->prioridad > qcb_actual->prioridad){
+            qcb_prio = qcb_actual;
+        }
+        pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
+    }
+    log_info(loggerMaster, "ENCONTRADO, QCB ID %d", qcb_prio->qid);
+    pthread_mutex_unlock(&mutex_cola_ready);
+    return qcb_prio;
+
+}
+
+/*t_qcb* buscar_qcb_mayor_prio(){
+    log_info(loggerMaster, "Buscando QCB de mayor prioridad");
+    pthread_mutex_lock(&mutex_cola_ready);
 
     if(list_size(cola_ready) == 0) {
         pthread_mutex_unlock(&mutex_cola_ready);
@@ -358,8 +387,6 @@ t_qcb* buscar_qcb_mayor_prio(){
     }
     t_qcb* qcb_prio = list_get(cola_ready, 0);
     int indice = 0;
-    //ESTOS LOCKS ESTABAN COMPLICADOS
-
     for(int i = 1; i < list_size(cola_ready); i++){
 
         log_info(loggerMaster, "Buscando LISTA");
@@ -376,7 +403,7 @@ t_qcb* buscar_qcb_mayor_prio(){
     pthread_mutex_unlock(&mutex_cola_ready);
     return qcb_prio;
 
-}
+}*/
 void eliminar_qcb_diccionario(int qid) {
     char* key = malloc(sizeof(int));
     sprintf(key, "%d",  qid);
@@ -428,6 +455,7 @@ t_wcb *buscar_worker_por_qid(int qid) {
 
 t_wcb *buscar_worker_libre(){
     pthread_mutex_lock(&mutex_workers);
+    log_info(loggerMaster, "BUSCANDO WORKER");
     for(int i = 0; i < list_size(lista_workers); i++){
         t_wcb *candidato = list_get(lista_workers, i);
         if(candidato->esta_libre){
@@ -496,6 +524,11 @@ void* inicializar_planificador(void* arg){
 
 void planificador_fifo(){
     //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
+    log_info(loggerMaster,"TAMAÑO INICIAL DE LISTA %d", list_size(cola_ready));
+    for(int i = 0; i < list_size(cola_ready);i++){
+        t_qcb *q = list_get(cola_ready,0);
+        log_info(loggerMaster,"id %d", q->qid);
+    }
     while(true){
         sem_wait(&replanificar);
         log_info(loggerMaster, "Hay proceso en READY");
@@ -510,43 +543,54 @@ void planificador_fifo(){
 
 void planificador_prioridades(){
     //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
+     log_info(loggerMaster,"TAMAÑO INICIAL DE LISTA %d", list_size(cola_ready));
+    for(int i = 0; i < list_size(cola_ready);i++){
+        t_qcb *q = list_get(cola_ready,0);
+        log_info(loggerMaster,"id %d", q->qid);
+    }
     while(true){
         sem_wait(&replanificar);
-        
-        //sem_wait(&hay_worker_libre);
         if(list_size(cola_ready) > 0){
             log_info(loggerMaster, "Hay proceso en READY");
             t_qcb* qcb_exec = buscar_qcb_mayor_prio();
             log_info(loggerMaster, "SALI DE LA FUNCION");
             if(cant_workers > 0)
             {
-                log_info(loggerMaster, "BUSCANDO WORKER");
+                
                 //t_wcb* wcb_elegido = buscar_wcb_menor_prio();
                 log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
                 t_wcb* wcb_elegido = buscar_worker_libre();
+                
                 if(wcb_elegido){
                     remover_qcb_cola(qcb_exec->qid, cola_ready, (mutex_cola_ready));
                     agregar_a_exec(qcb_exec);
                     mandar_a_ejecutar(qcb_exec, wcb_elegido);
                 }else{
+                    log_info(loggerMaster, "DESALOJO A REALIZAR");
                     wcb_elegido = buscar_wcb_menor_prio();
+                    log_info(loggerMaster, "WORKER A DESALOJAR");
                     t_qcb *qcb_actual = buscar_qcb_por_ID(wcb_elegido->qid_asig);
-                    pthread_mutex_lock(&(qcb_exec->mutex_qcb));
+                    log_info(loggerMaster, "QCB A DESALOJAR");
+                    //pthread_mutex_lock(&(qcb_exec->mutex_qcb));
                     if(qcb_exec->prioridad < qcb_actual->prioridad){
                         log_info(loggerMaster, "Desalojando Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_actual->ruta_arch, qcb_actual->prioridad, qcb_actual->qid);
-                        mandar_a_desalojar(qcb_actual);
                         remover_qcb_cola(qcb_actual->qid, cola_exec, mutex_cola_exec);
-                        agregar_a_ready(qcb_actual);
-                        sem_post(&replanificar);
+                        mandar_a_desalojar(qcb_actual);
+                        
+                        
+                        log_info(loggerMaster, "REMUEVO DE COLA READY");
                         remover_qcb_cola(qcb_exec->qid, cola_ready, mutex_cola_ready);
+                        log_info(loggerMaster, "AGREGO A EXEC");
                         agregar_a_exec(qcb_exec);
+                        log_info(loggerMaster, "MANDO A EJECUTAR");
                         mandar_a_ejecutar(qcb_exec, wcb_elegido);
+
+                        agregar_a_ready(qcb_actual);
                     }
-                    pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
+                    //pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
                 }
             }else{
                 log_info(loggerMaster, "No hay workers disponibles");
-                agregar_a_ready(qcb_exec);
             }
         }else{
             log_info(loggerMaster, "NO Hay proceso en READY");
@@ -559,6 +603,8 @@ void* hilo_aging(void* arg){
     while(qcb->estado == READY && qcb->prioridad > 0){
         
         usleep(tiempo_aging * 1000);
+        if(qcb->estado != READY)
+            break;
         pthread_mutex_lock(&(qcb->mutex_qcb));
         qcb->prioridad -= 1;
         pthread_mutex_unlock(&(qcb->mutex_qcb));
@@ -572,16 +618,6 @@ void* hilo_aging(void* arg){
 
 
 void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker) {
-    //BUSCAR UN WORKER LIBRE
-    //MANDARLE LA QUERY
-    
-    //t_wcb* worker = buscar_worker_libre();
-    // Control formal por si no hay workers libres (no deberia pasar)
-    /*if(worker == NULL){
-        log_error(loggerMaster, "No se encontro un Worker libre para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb->ruta_arch, qcb->prioridad, qcb->qid);
-        return;
-    }*/
-    // Actualizar WCB con proteccion de mutex
     pthread_mutex_lock(&worker->mutex_wcb);
     worker->esta_libre = false;
     worker->qid_asig = qcb->qid;
@@ -636,4 +672,16 @@ void remover_qcb_cola(int qid, t_list *cola, pthread_mutex_t mutexCola){
     }
     log_info(loggerMaster, "No se encontro el qid %d en la cola a remover", qid);
     return;
+}
+
+//FUNCION PARA MOSTRAR NRO DE ESTADO COMO STRING
+char *mostrar_Estado(t_estado estado){
+    switch(estado){
+        case READY:
+            return "READY";
+        case EXEC:
+            return "EXEC";
+        case EXIT:
+            return "EXIT";
+    }
 }

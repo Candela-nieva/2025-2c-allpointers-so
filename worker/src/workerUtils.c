@@ -213,7 +213,7 @@ void* manejar_ejecutar(void *buffer) {
 
     }
     
-    ejecutar_query(pc, archivo, qid); 
+    //ejecutar_query(pc, archivo, qid); 
     log_info(loggerWorker, "FIN DE QUERY ACTUAL");
     free(archivo);
 
