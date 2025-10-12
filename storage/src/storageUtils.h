@@ -42,10 +42,13 @@ void inicializar_montaje();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
 void iniciar_servidor_multihilo(void);
 void cargar_config_superBlock();
-void crear_bitmap();
-void crear_directorios();
 void formateo();
 void freshStart();
 void verificar_freshStart();
+void limpiar_fs();
+void recrear_fs();
+void crear_bitmap();
+void crear_directorios();
+void crear_BlocksHashIndex();
 
 #endif

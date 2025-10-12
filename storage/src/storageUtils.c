@@ -49,50 +49,23 @@ void cargar_config_superBlock(){
 
 void inicializar_montaje(){
     cargar_config_superBlock();
-    verificar_freshStart();
     freshStart();
-    crear_bitmap();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
 }
 
 void freshStart(){
+    verificar_freshStart();
     if(fresh_start) {
         formateo();
-        crear_directorios();
-    }
-}
-
-void crear_directorios() {
-    char pathFiles[256];
-    char pathBlocks[256];
-    char pathBlocksHashIndex[256];
-
-    sprintf(pathFiles, "%s/files", config_struct->punto_montaje);
-    sprintf(pathBlocks, "%s/physical_blocks", config_struct->punto_montaje);
-    sprintf(pathBlocksHashIndex, "%s/blocks_hash_index.config", config_struct->punto_montaje);
-
-    if(mkdir(pathFiles, 0755) == -1) {
-        if (errno != EEXIST) {
-            log_error(loggerStorage, "Error al crear el directorio 'files': %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    if(mkdir(pathBlocks, 0755) == -1) {
-        if (errno != EEXIST) {
-            log_error(loggerStorage, "Error al crear el directorio 'physical_blocks': %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-    }
-    
-    archBlocksHashIndex = fopen(pathBlocksHashIndex,"w+");
-    if(!archBlocksHashIndex) {
-        log_error(loggerStorage, "Error al crear el archivo 'blocks_hash_index.config': %s", strerror(errno));
-        exit(EXIT_FAILURE);
     }
 }
 
 void formateo() {
+    limpiar_fs();
+    recrear_fs();
+}
+
+void limpiar_fs() {
     char path_superblock[256];
     char path_bitmap[256];
     char path_blocks[256];
@@ -110,6 +83,44 @@ void formateo() {
             config_struct->punto_montaje, config_struct->punto_montaje,
             config_struct->punto_montaje, config_struct->punto_montaje);
     system(cmd);
+}
+
+void recrear_fs() {
+    crear_directorios();
+    crear_BlocksHashIndex();
+    crear_bitmap();
+}
+
+void crear_directorios() {
+    char pathFiles[256];
+    char pathBlocks[256];
+    
+    sprintf(pathFiles, "%s/files", config_struct->punto_montaje);
+    sprintf(pathBlocks, "%s/physical_blocks", config_struct->punto_montaje);
+    
+    if(mkdir(pathFiles, 0755) == -1) {
+        if (errno != EEXIST) {
+            log_error(loggerStorage, "Error al crear el directorio 'files': %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if(mkdir(pathBlocks, 0755) == -1) {
+        if (errno != EEXIST) {
+            log_error(loggerStorage, "Error al crear el directorio 'physical_blocks': %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+void crear_BlocksHashIndex() {
+    char pathBlocksHashIndex[256];
+    sprintf(pathBlocksHashIndex, "%s/blocks_hash_index.config", config_struct->punto_montaje);
+    archBlocksHashIndex = fopen(pathBlocksHashIndex,"w+");
+    if(!archBlocksHashIndex) {
+        log_error(loggerStorage, "Error al crear el archivo 'blocks_hash_index.config': %s", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
 }
 
 void crear_bitmap() {
