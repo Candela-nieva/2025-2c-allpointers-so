@@ -7,6 +7,8 @@ int fs_size;
 int tam_bloq;
 int cantBloq;
 int arrayDeBits[];
+char path_files[256];
+char path_blocks[256];
 t_bitarray* bitarray;
 void* mappeo;
 FILE *archBitmap;
@@ -19,6 +21,7 @@ t_config *config_SB = NULL;
 t_config_storage *config_struct = NULL;
 t_config_superblock *config_superBlock = NULL;
 char* config_storage;
+
 
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_storage)); //Reserva memoria
@@ -48,6 +51,10 @@ void cargar_config_superBlock(){
     tam_bloq = atoi(config_superBlock->tam_bloq);
     cantBloq = fs_size / tam_bloq; //al ser un bitmap, cada entrada es de 1 bit, por lo que el tamanio es igual a cantBloques bits
     log_info(loggerStorage,"CantBloques: %d", cantBloq);
+
+    sprintf(path_blocks, "%s/physical_blocks", config_struct->punto_montaje);
+    sprintf(path_files, "%s/files", config_struct->punto_montaje);
+    
 }
 
 void inicializar_montaje(){
@@ -64,23 +71,25 @@ void freshStart(){
     }
 }
 
+void verificar_freshStart(){
+    if(strcmp((config_struct->fresh_start), "TRUE") == 0){
+        fresh_start = true;
+    }else{
+        fresh_start = false;
+    }
+}
+
 void formateo() {
     limpiar_fs();
     recrear_fs();
 }
 
 void limpiar_fs() {
-    char path_superblock[256];
     char path_bitmap[256];
-    char path_blocks[256];
-    char path_files[256];
     char path_blocks_hash[256];
 
-    sprintf(path_superblock, "%s/superblock.config", config_struct->punto_montaje);
     sprintf(path_bitmap, "%s/bitmap.bin", config_struct->punto_montaje);
     sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
-    sprintf(path_blocks, "%s/physical_blocks", config_struct->punto_montaje);
-    sprintf(path_files, "%s/files", config_struct->punto_montaje);
 
     char cmd[512];
     sprintf(cmd, "rm -rf %s/bitmap.bin %s/blocks_hash_index.config %s/physical_blocks %s/files",
@@ -96,27 +105,9 @@ void recrear_fs() {
 }
 
 void crear_directorios() {
-    char pathFiles[256];
-    char pathBlocks[256];
-    
-    sprintf(pathFiles, "%s/files", config_struct->punto_montaje);
-    sprintf(pathBlocks, "%s/physical_blocks", config_struct->punto_montaje);
-    
-    if(mkdir(pathFiles, 0755) == -1) {
-        if (errno != EEXIST) {
-            log_error(loggerStorage, "Error al crear el directorio 'files': %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    if(mkdir(pathBlocks, 0755) == -1) {
-        if (errno != EEXIST) {
-            log_error(loggerStorage, "Error al crear el directorio 'physical_blocks': %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    crear_physical_blocks(pathBlocks);
+    crear_directorio(config_struct->punto_montaje, "files", NULL);
+    crear_directorio(config_struct->punto_montaje, "physical_blocks", NULL);
+    crear_physical_blocks();
 }
 
 void crear_BlocksHashIndex() {
@@ -129,7 +120,11 @@ void crear_BlocksHashIndex() {
     }
 }
 
-void crear_physical_blocks(char *pathBlocks) {
+// IDEA DANTESCA
+// Crear una funcion que sea crear config para generalizar despues
+//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+void crear_physical_blocks() {
     int anchoEntrada = calcularAncho();
 
     for(int i=0; i < cantBloq; i++){
@@ -137,7 +132,7 @@ void crear_physical_blocks(char *pathBlocks) {
         char nroBloque[256];
         sprintf(nroBloque,"%0*d", anchoEntrada, i);
         log_info(loggerStorage,"BLOQUE NRO %d: %s", i, nroBloque);
-        sprintf(nombreArch, "%s/block%s.dat", pathBlocks, nroBloque);
+        sprintf(nombreArch, "%s/block%s.dat", path_blocks, nroBloque);
         FILE *archBloque = fopen(nombreArch, "w+");
         if(!archBloque) {
             log_error(loggerStorage, "Error al crear el archivo de bloque '%s' : %s", nombreArch, strerror(errno));
@@ -178,7 +173,36 @@ void crear_bitmap() {
 }
 
 void initialFile(){
-    
+    char initial[256];
+    crear_directorio(path_files, "initial_file",initial);
+    char tagBase[256];
+    crear_directorio(initial, "BASE", tagBase);
+
+    char config[256];
+    sprintf(config, "%s/metadata.config", tagBase);
+    FILE *metadata = fopen(config,"w+");
+    if(!metadata) {
+        log_error(loggerStorage, "Error al crear el archivo 'metadata.config': %s", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    char logicalBlocks[256];
+    crear_directorio(tagBase, "logical_blocks", logicalBlocks);
+
+}
+
+void crear_directorio(char* path, char* nombreDirectorio, char *nuevoPath) {
+    char directorio[256];
+    sprintf(directorio, "%s/%s", path, nombreDirectorio);
+    if(mkdir(directorio, 0755) == -1) {
+        if (errno != EEXIST) {
+            log_error(loggerStorage, "Error al crear el directorio '%s': %s", nombreDirectorio, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+    if(nuevoPath != NULL){
+        strcpy(nuevoPath,directorio);   //en caso de que querramos conservar el path del nuevo directorio, sino pasamos NULL
+    }
 }
 
 void cargar_config() {
@@ -194,14 +218,6 @@ void cargar_config() {
     retardo_operacion = atoi(config_struct->retardo_operacion);
     retardo_acceso_bloque = atoi(config_struct->retardo_acceso_bloque);
 
-}
-
-void verificar_freshStart(){
-    if(strcmp((config_struct->fresh_start), "TRUE") == 0){
-        fresh_start = true;
-    }else{
-        fresh_start = false;
-    }
 }
 
 // Función para iniciar el logger
