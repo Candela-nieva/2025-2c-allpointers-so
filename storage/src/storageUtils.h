@@ -50,5 +50,9 @@ void recrear_fs();
 void crear_bitmap();
 void crear_directorios();
 void crear_BlocksHashIndex();
+void crear_physical_blocks(char *pathBlocks);
+char *completar_ceros(int aCompletar);
+int calcularAncho();
+void initialFile();
 
 #endif

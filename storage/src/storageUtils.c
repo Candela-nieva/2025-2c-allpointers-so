@@ -5,6 +5,7 @@ int retardo_acceso_bloque;
 bool fresh_start;
 int fs_size;
 int tam_bloq;
+int cantBloq;
 int arrayDeBits[];
 t_bitarray* bitarray;
 void* mappeo;
@@ -45,11 +46,14 @@ void cargar_config_superBlock(){
         printf("llegamos a despues");
 
     tam_bloq = atoi(config_superBlock->tam_bloq);
+    cantBloq = fs_size / tam_bloq; //al ser un bitmap, cada entrada es de 1 bit, por lo que el tamanio es igual a cantBloques bits
+    log_info(loggerStorage,"CantBloques: %d", cantBloq);
 }
 
 void inicializar_montaje(){
     cargar_config_superBlock();
     freshStart();
+    initialFile();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
 }
 
@@ -86,9 +90,9 @@ void limpiar_fs() {
 }
 
 void recrear_fs() {
+    crear_bitmap();
     crear_directorios();
     crear_BlocksHashIndex();
-    crear_bitmap();
 }
 
 void crear_directorios() {
@@ -111,6 +115,8 @@ void crear_directorios() {
             exit(EXIT_FAILURE);
         }
     }
+
+    crear_physical_blocks(pathBlocks);
 }
 
 void crear_BlocksHashIndex() {
@@ -123,16 +129,56 @@ void crear_BlocksHashIndex() {
     }
 }
 
+void crear_physical_blocks(char *pathBlocks) {
+    int anchoEntrada = calcularAncho();
+
+    for(int i=0; i < cantBloq; i++){
+        char nombreArch[256];
+        char nroBloque[256];
+        sprintf(nroBloque,"%0*d", anchoEntrada, i);
+        log_info(loggerStorage,"BLOQUE NRO %d: %s", i, nroBloque);
+        sprintf(nombreArch, "%s/block%s.dat", pathBlocks, nroBloque);
+        FILE *archBloque = fopen(nombreArch, "w+");
+        if(!archBloque) {
+            log_error(loggerStorage, "Error al crear el archivo de bloque '%s' : %s", nombreArch, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        log_info(loggerStorage,"Nombre archivo: %s", nombreArch);
+    }
+}
+
+int calcularAncho(){
+    int ancho = 1;
+    int aux = cantBloq - 1;
+
+    while(aux >= 10){
+        ancho++;
+        aux /= 10;
+    }
+    
+    log_info(loggerStorage,"CANT CIFRAS = %d", ancho);
+    return ancho;
+}
+
+char *completar_ceros(int aCompletar){
+    char aux[256];
+    sprintf(aux,"%04d",aCompletar);
+    return aux;
+}
+
 void crear_bitmap() {
     //char *pathBitmap = strcat(config_struct->punto_montaje,"/bitmap.bin/");
     char pathBitmap[256];
     sprintf(pathBitmap, "%s/bitmap.bin", config_struct->punto_montaje);
     archBitmap = fopen(pathBitmap,"wb+");
     int fildes = fileno(archBitmap);
-    int tamanio = fs_size / tam_bloq;
-    ftruncate(fildes, tamanio);
-    mappeo = mmap(NULL, tamanio, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
-    bitarray = bitarray_create_with_mode(mappeo, tamanio, LSB_FIRST);
+    ftruncate(fildes, cantBloq);
+    mappeo = mmap(NULL, cantBloq, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
+    bitarray = bitarray_create_with_mode(mappeo, cantBloq, LSB_FIRST);
+}
+
+void initialFile(){
+    
 }
 
 void cargar_config() {
