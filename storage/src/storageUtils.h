@@ -12,6 +12,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <errno.h>
+
+
 typedef struct {
     char* modulo;
     char* puerto_escucha;
@@ -26,6 +28,24 @@ typedef struct {
     char* fs_size;
     char* tam_bloq;
 } t_config_superblock;
+
+typedef enum {
+    WIP,
+    COMMIT
+}t_estadoTag;
+
+typedef struct {
+    char *nombreArch;
+    t_dictionary *tags;
+}t_fcb;
+
+typedef struct {
+    char* nombreTag;
+    //char *pathMetaData;
+    size_t tamanio;
+    int *physicalBlocks;
+    t_estadoTag estado;
+}t_tag;
 
 extern t_log* loggerStorage;
 extern t_config* config;
@@ -53,6 +73,15 @@ void crear_BlocksHashIndex();
 void crear_physical_blocks();
 char *completar_ceros(int aCompletar);
 int calcularAncho();
+bool op_create(char *nombreArch, char *nombreTag);
 void initialFile();
 void crear_directorio(char* path, char* nombreDirectorio, char *nuevoPath);
+
+//============================= FCB Y TAGS ==================================
+t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag);
+t_tag *crear_tag(char *nombreNuevoTag, t_dictionary *diccionarioTagsArch);
+t_tag *buscar_Tag_Arch(char *Arch, char *Tag);
+char *path_Metadata(char *nombreArch, char *nombreTag);
+void crear_config(char* path, char* nombreConfig, char* nuevoPath);
+
 #endif

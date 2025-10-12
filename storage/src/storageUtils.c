@@ -11,8 +11,8 @@ char path_files[256];
 char path_blocks[256];
 t_bitarray* bitarray;
 void* mappeo;
-FILE *archBitmap;
-FILE *archBlocksHashIndex;
+t_dictionary *diccionario_archivos = NULL;
+
 // Hicimos globales para que podamos hacer msync con mappeo y
 // cerrar archBitmap cuuando terminemos de usarlo
 t_log* loggerStorage = NULL;
@@ -58,6 +58,7 @@ void cargar_config_superBlock(){
 }
 
 void inicializar_montaje(){
+    diccionario_archivos = dictionary_create();
     cargar_config_superBlock();
     freshStart();
     initialFile();
@@ -113,32 +114,43 @@ void crear_directorios() {
 void crear_BlocksHashIndex() {
     char pathBlocksHashIndex[256];
     sprintf(pathBlocksHashIndex, "%s/blocks_hash_index.config", config_struct->punto_montaje);
-    archBlocksHashIndex = fopen(pathBlocksHashIndex,"w+");
+    FILE* archBlocksHashIndex = fopen(pathBlocksHashIndex,"w+");
     if(!archBlocksHashIndex) {
         log_error(loggerStorage, "Error al crear el archivo 'blocks_hash_index.config': %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
+    fclose(archBlocksHashIndex);
 }
 
-// IDEA DANTESCA
-// Crear una funcion que sea crear config para generalizar despues
-//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+void crear_config (char* path, char* nombreConfig, char* nuevoPath) {
+    char pathConfig [256];
+    sprintf(pathConfig, "%s/%s", path, nombreConfig);
+    FILE* archivo = fopen(pathConfig, "w+");
+    if(!archivo) {
+        log_error(loggerStorage, "Error al crear el archivo '%s': %s", nombreConfig, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    fclose(archivo);
+    if(nuevoPath != NULL){
+        strcpy(nuevoPath,pathConfig);
+    }
+}
+
+
 
 void crear_physical_blocks() {
     int anchoEntrada = calcularAncho();
-
+    char nombreArch[256];
+    char nroBloque[256];
     for(int i=0; i < cantBloq; i++){
-        char nombreArch[256];
-        char nroBloque[256];
         sprintf(nroBloque,"%0*d", anchoEntrada, i);
-        log_info(loggerStorage,"BLOQUE NRO %d: %s", i, nroBloque);
         sprintf(nombreArch, "%s/block%s.dat", path_blocks, nroBloque);
         FILE *archBloque = fopen(nombreArch, "w+");
         if(!archBloque) {
             log_error(loggerStorage, "Error al crear el archivo de bloque '%s' : %s", nombreArch, strerror(errno));
             exit(EXIT_FAILURE);
         }
-        log_info(loggerStorage,"Nombre archivo: %s", nombreArch);
+        fclose(archBloque);
     }
 }
 
@@ -165,31 +177,14 @@ void crear_bitmap() {
     //char *pathBitmap = strcat(config_struct->punto_montaje,"/bitmap.bin/");
     char pathBitmap[256];
     sprintf(pathBitmap, "%s/bitmap.bin", config_struct->punto_montaje);
-    archBitmap = fopen(pathBitmap,"wb+");
+    FILE* archBitmap = fopen(pathBitmap,"wb+");
     int fildes = fileno(archBitmap);
     ftruncate(fildes, cantBloq);
     mappeo = mmap(NULL, cantBloq, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
     bitarray = bitarray_create_with_mode(mappeo, cantBloq, LSB_FIRST);
+    fclose(archBitmap);
 }
 
-void initialFile(){
-    char initial[256];
-    crear_directorio(path_files, "initial_file",initial);
-    char tagBase[256];
-    crear_directorio(initial, "BASE", tagBase);
-
-    char config[256];
-    sprintf(config, "%s/metadata.config", tagBase);
-    FILE *metadata = fopen(config,"w+");
-    if(!metadata) {
-        log_error(loggerStorage, "Error al crear el archivo 'metadata.config': %s", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-
-    char logicalBlocks[256];
-    crear_directorio(tagBase, "logical_blocks", logicalBlocks);
-
-}
 
 void crear_directorio(char* path, char* nombreDirectorio, char *nuevoPath) {
     char directorio[256];
@@ -261,5 +256,58 @@ void iniciar_servidor_multihilo(void)
     // Nunca llega acá
     close(fd_sv);
     return;
+}
+
+void initialFile(){
+    op_create("initial_file","BASE");
+}
+
+//OPERACIONES DE STORAGE
+
+bool op_create(char *nombreArch, char *nombreTag){
+    char initial[256];
+    crear_directorio(path_files, nombreArch,initial);
+    char tagBase[256];
+    crear_directorio(initial, nombreTag, tagBase);
+
+    crear_config(tagBase,"metadata.config",NULL);
+    
+    char logicalBlocks[256];
+    crear_directorio(tagBase, "logical_blocks", logicalBlocks);
+
+    crear_fcb(nombreArch, nombreTag);
+
+    return true;
+}
+
+//LIBERAR DESPUES!!
+char *path_Metadata(char *nombreArch, char *nombreTag){
+    return string_from_format("%s/%s/%s/metadata.config", path_files, nombreArch, nombreTag);
+}
+
+t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
+    t_fcb *fcb = malloc(sizeof(t_fcb));
+    fcb->nombreArch = nombreNuevoArch;
+    fcb->tags = dictionary_create();
+    t_tag *nuevoTag = crear_tag(nombreNuevoTag, fcb->tags);
+    dictionary_put(diccionario_archivos,fcb->nombreArch,fcb);
+    return fcb;
+}
+
+t_tag *crear_tag(char *nombreNuevoTag, t_dictionary *diccionarioTagsArch){
+    t_tag *tag = malloc(sizeof(t_tag));
+    tag->nombreTag = nombreNuevoTag;
+    tag->tamanio = 0;
+    tag->physicalBlocks = NULL;
+    tag->estado = WIP;
+    
+    dictionary_put(diccionarioTagsArch, tag->nombreTag, tag);
+    return tag;
+}
+
+t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
+    t_fcb *fcb = dictionary_get(diccionario_archivos, Arch);
+    t_tag *tag = dictionary_get(fcb->tags, Tag);
+    return tag;
 }
 
