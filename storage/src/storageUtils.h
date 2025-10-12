@@ -41,7 +41,6 @@ typedef struct {
 
 typedef struct {
     char* nombreTag;
-    //char *pathMetaData;
     size_t tamanio;
     int *physicalBlocks;
     t_estadoTag estado;
@@ -82,6 +81,6 @@ t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag);
 t_tag *crear_tag(char *nombreNuevoTag, t_dictionary *diccionarioTagsArch);
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag);
 char *path_Metadata(char *nombreArch, char *nombreTag);
-void crear_config(char* path, char* nombreConfig, char* nuevoPath);
+void crear_metada(char* path, char* nuevoPath);
 
 #endif

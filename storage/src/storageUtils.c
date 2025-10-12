@@ -122,21 +122,23 @@ void crear_BlocksHashIndex() {
     fclose(archBlocksHashIndex);
 }
 
-void crear_config (char* path, char* nombreConfig, char* nuevoPath) {
+void crear_metadata (char* path, char* nuevoPath) {
     char pathConfig [256];
-    sprintf(pathConfig, "%s/%s", path, nombreConfig);
+    sprintf(pathConfig, "%s/metadata.config", path);
     FILE* archivo = fopen(pathConfig, "w+");
     if(!archivo) {
-        log_error(loggerStorage, "Error al crear el archivo '%s': %s", nombreConfig, strerror(errno));
+        log_error(loggerStorage, "Error al crear el archivo 'metadata.config': %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
+    fputs("TAMAÑO=0\n",archivo);
+    fputs("BLOCKS=[]\n",archivo);
+    fputs("ESTADO=WORK_IN_PROGRESS\n",archivo);
+
     fclose(archivo);
     if(nuevoPath != NULL){
         strcpy(nuevoPath,pathConfig);
     }
 }
-
-
 
 void crear_physical_blocks() {
     int anchoEntrada = calcularAncho();
@@ -269,12 +271,9 @@ bool op_create(char *nombreArch, char *nombreTag){
     crear_directorio(path_files, nombreArch,initial);
     char tagBase[256];
     crear_directorio(initial, nombreTag, tagBase);
-
-    crear_config(tagBase,"metadata.config",NULL);
-    
+    crear_metadata(tagBase,NULL);
     char logicalBlocks[256];
     crear_directorio(tagBase, "logical_blocks", logicalBlocks);
-
     crear_fcb(nombreArch, nombreTag);
 
     return true;
@@ -300,7 +299,6 @@ t_tag *crear_tag(char *nombreNuevoTag, t_dictionary *diccionarioTagsArch){
     tag->tamanio = 0;
     tag->physicalBlocks = NULL;
     tag->estado = WIP;
-    
     dictionary_put(diccionarioTagsArch, tag->nombreTag, tag);
     return tag;
 }
