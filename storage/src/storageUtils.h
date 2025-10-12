@@ -10,6 +10,8 @@
 #include <commons/bitarray.h>
 #include <utils/chiches.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <errno.h>
 typedef struct {
     char* modulo;
     char* puerto_escucha;
@@ -41,5 +43,9 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 void iniciar_servidor_multihilo(void);
 void cargar_config_superBlock();
 void crear_bitmap();
+void crear_directorios();
+void formateo();
+void freshStart();
+void verificar_freshStart();
 
 #endif

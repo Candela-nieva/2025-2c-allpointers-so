@@ -5,9 +5,13 @@ int retardo_acceso_bloque;
 bool fresh_start;
 int fs_size;
 int tam_bloq;
-int[] arrayDeBits;
+int arrayDeBits[];
 t_bitarray* bitarray;
-
+void* mappeo;
+FILE *archBitmap;
+FILE *archBlocksHashIndex;
+// Hicimos globales para que podamos hacer msync con mappeo y
+// cerrar archBitmap cuuando terminemos de usarlo
 t_log* loggerStorage = NULL;
 t_config *config = NULL;
 t_config *config_SB = NULL;
@@ -46,20 +50,77 @@ void cargar_config_superBlock(){
 void inicializar_montaje(){
     cargar_config_superBlock();
     verificar_freshStart();
+    freshStart();
     crear_bitmap();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
+}
+
+void freshStart(){
+    if(fresh_start) {
+        formateo();
+        crear_directorios();
+    }
+}
+
+void crear_directorios() {
+    char pathFiles[256];
+    char pathBlocks[256];
+    char pathBlocksHashIndex[256];
+
+    sprintf(pathFiles, "%s/files", config_struct->punto_montaje);
+    sprintf(pathBlocks, "%s/physical_blocks", config_struct->punto_montaje);
+    sprintf(pathBlocksHashIndex, "%s/blocks_hash_index.config", config_struct->punto_montaje);
+
+    if(mkdir(pathFiles, 0755) == -1) {
+        if (errno != EEXIST) {
+            log_error(loggerStorage, "Error al crear el directorio 'files': %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if(mkdir(pathBlocks, 0755) == -1) {
+        if (errno != EEXIST) {
+            log_error(loggerStorage, "Error al crear el directorio 'physical_blocks': %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+    
+    archBlocksHashIndex = fopen(pathBlocksHashIndex,"w+");
+    if(!archBlocksHashIndex) {
+        log_error(loggerStorage, "Error al crear el archivo 'blocks_hash_index.config': %s", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+}
+
+void formateo() {
+    char path_superblock[256];
+    char path_bitmap[256];
+    char path_blocks[256];
+    char path_files[256];
+    char path_blocks_hash[256];
+
+    sprintf(path_superblock, "%s/superblock.config", config_struct->punto_montaje);
+    sprintf(path_bitmap, "%s/bitmap.bin", config_struct->punto_montaje);
+    sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
+    sprintf(path_blocks, "%s/physical_blocks", config_struct->punto_montaje);
+    sprintf(path_files, "%s/files", config_struct->punto_montaje);
+
+    char cmd[512];
+    sprintf(cmd, "rm -rf %s/bitmap.bin %s/blocks_hash_index.config %s/physical_blocks %s/files",
+            config_struct->punto_montaje, config_struct->punto_montaje,
+            config_struct->punto_montaje, config_struct->punto_montaje);
+    system(cmd);
 }
 
 void crear_bitmap() {
     //char *pathBitmap = strcat(config_struct->punto_montaje,"/bitmap.bin/");
     char pathBitmap[256];
-    sprintf(pathBitmap, "%s/bitmap.bin",config_struct->punto_montaje);
-    log_info(loggerStorage, "EL PATH DEL BITMAP ES %s",pathBitmap);
-    FILE *archBitmap = fopen(pathBitmap,"wb+");
+    sprintf(pathBitmap, "%s/bitmap.bin", config_struct->punto_montaje);
+    archBitmap = fopen(pathBitmap,"wb+");
     int fildes = fileno(archBitmap);
     int tamanio = fs_size / tam_bloq;
     ftruncate(fildes, tamanio);
-    void* mappeo = mmap(NULL, tamanio, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
+    mappeo = mmap(NULL, tamanio, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
     bitarray = bitarray_create_with_mode(mappeo, tamanio, LSB_FIRST);
 }
 
@@ -119,8 +180,7 @@ void iniciar_servidor_multihilo(void)
             //pthread_t hilo_worker;
             //pthread_create(&hilo_worker, NULL, atender_conexion, NULL);
             //pthread_detach(hilo_worker);
-        }
-        else{
+        }else{
             log_info(loggerStorage, "Operacion desconocida. Cerrando conexion.");
             close(fd_conexion);
         }
