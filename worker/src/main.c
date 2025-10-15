@@ -10,22 +10,11 @@ int main(int argc, char* argv[]) {
     // Parametros de entrada
     config_worker = argv[1];
     int worker_id = atoi(argv[2]);
-    //config_worker = "worker.config";
-    //int worker_id = 1;
     saludar("worker");
 
-    //char* path_config = strdup(argv[1]);
-    //int worker_id = atoi(argv[2]);
-   // config_worker = argv[1];
-    //int worker_id = atoi(argv[2]);
     inicializar_config();
     cargar_config();
     crear_logger();
-
-   // if (!config_struct || !config_struct->ip_master || !config_struct->puerto_master) {
-    //log_info(loggerWorker, "Error: Configuración incompleta");
-    //return EXIT_FAILURE;
-    //}
 
     int* id = malloc(sizeof(int));
     *id = worker_id;

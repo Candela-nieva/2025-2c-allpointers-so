@@ -22,6 +22,29 @@ typedef struct {
     char* log_level;
 } t_config_worker;
 
+
+// ============== Memoria Interna ================
+typedef struct {
+    char file_tag[128];     // nombre del file:tag que ocupa este bloque
+    int bloque_id;          // ID del bloque dentro del file:tag
+    bool modificado;        // indica si el bloque ha sido modificado (1) o no (0) (dirty bit)
+    bool en_uso;            // indica si el bloque está en uso (1) o libre (0) (para CLOCK)
+    time_t ultima_ref;      // timestamp de la última referencia (para LRU)
+    void* datos;            // puntero a los datos del bloque
+    bool ocupado;           // indica si el bloque está ocupado (1) o libre (0)
+} t_bloque_memoria;
+
+typedef struct {
+    t_bloque_memoria* bloques;      // array de bloques de memoria
+    int cant_bloques;               // cantidad total de bloques en memoria
+    int tamanio_bloque;             // tamaño de cada bloque en bytes
+    int tamanio_total;              // tamaño total de la memoria en bytes
+    int puntero_clock;              // puntero para el algoritmo CLOCK
+    char algoritmo[10];             // CLOCK o LRU 
+    pthread_mutex_t mutex;          // mutex para sincronización de acceso
+} t_memoria_interna;
+
+
 extern t_log* loggerWorker;
 extern t_config* config;
 extern t_config_worker* config_struct; 
@@ -32,9 +55,11 @@ void inicializar_config(void);
 void crear_logger ();
 void cargar_config ();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
+void esperar_queries()
 void* iniciar_conexion_storage(void* arg);
 void *manejar_ejecutar(void* buffer);
-//void manejar_ejecutar(void* buffer);
 void* iniciar_conexion_master(void* arg);
-void esperar_queries();
+static void trim_newline(char* s);
+static void ejecutar_instruccion(const char* instruccion, int qid, int pc);
+void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
 #endif

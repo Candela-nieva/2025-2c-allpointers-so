@@ -9,6 +9,9 @@ int socket_storage;
 int socket_master;
 char* config_worker;
 atomic_int hay_interrupt = ATOMIC_VAR_INIT(0);
+int tamanio_bloque_storage = 0; // el antiguo tamanio_pag
+
+t_memoria_interna memoria;
 
 // Sincronización entre hilos
 pthread_mutex_t mutex_storage_ready= PTHREAD_MUTEX_INITIALIZER;
@@ -73,7 +76,8 @@ void crear_logger () {
 }
 
 // =================== CONEXION A MASTER =======================
-// hola
+// Tiene que esperar a que storage este listo...
+// 2do) Iniciar conexion a master
 
 void* iniciar_conexion_master(void* arg){
     
@@ -213,7 +217,7 @@ void* manejar_ejecutar(void *buffer) {
 
     }
     
-    //ejecutar_query(pc, archivo, qid); 
+    //ejecutar_query(pc, archivo, qid); ---> ESTO HAY QUE DESCOMENTARLO LUEGO!!
     log_info(loggerWorker, "FIN DE QUERY ACTUAL");
     free(archivo);
 
@@ -233,6 +237,7 @@ static void trim_newline(char* s) {
     }
 }
 
+// Parsea y ejecuta una instrucción individual
 static void ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     if(!instruccion) return;
     
@@ -249,7 +254,7 @@ static void ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     if(strcmp(op, "CREATE") == 0) {
         char* tag = strtok(NULL, " ");
         log_info(loggerWorker, "Query %d: - Instrucción realizada: CREATE", qid);
-        // STUB: enviar CREATE a Storage (ya tenés ejecutar_create)
+        ejecutar_create(tag);
     }
 
     else if (strcmp(op, "TRUNCATE") == 0) {
@@ -307,6 +312,60 @@ static void ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     free(copia);
 
 }
+
+
+// ==== Funciones de ejecucion de instrucciones ====
+
+void ejecutar_create(char* tag) {
+    t_paquete* paquete = crear_paquete(CREATE);
+    int tam = strlen(tag) + 1;
+    agregar_a_paquete(paquete, tag, tam);
+    enviar_paquete(paquete, socket_storage);  // se envia a Storage
+    eliminar_paquete(paquete);
+
+    log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", tag); // LOG NO OBLIGATORIO
+
+    // Ojo que es con tamaño 0 el nuevo archivo
+}
+
+void ejecutar_truncate(char* tag, int nuevo_tam) {
+    log_info(loggerWorker, "TRUNCATE solicitad en tag: %s, nuevo tamaño: %d", tag, nuevo_tam); // LOG NO OBLIGATORIO
+    
+    if(tamanio_bloque_storage <= 0) {
+        log_info(loggerWorker, "Error: Tamaño de bloque de Storage no válido. No se puede ejecutar TRUNCATE.");
+        return;
+    }
+
+    if(nuevo_tam % tamanio_bloque_storage != 0) {
+        log_info(loggerWorker, "Error: El nuevo tamaño %d NO es múltiplo del tamaño de bloque %d. TRUNCATE abortado.", nuevo_tam, tamanio_bloque_storage);
+        return;
+    }
+
+    t_paquete* paquete = crear_paquete(TRUNCATE);
+    int tam = strlen(tag) + 1;
+    agregar_a_paquete(paquete, tag, tam);
+    agregar_a_paquete(paquete, &nuevo_tam, sizeof(int));
+    enviar_paquete(paquete, socket_storage);  // se envia a Storage
+    eliminar_paquete(paquete);
+
+    log_info(loggerWorker, "Instrucción TRUNCATE enviada a Storage para el tag: %s, nuevo tamaño: %d", tag, nuevo_tam); // LOG NO OBLIGATORIO
+}
+
+void ejecutar_write(char* tag, int direccion, char* contenido) {
+    // TODO
+}
+
+
+// TODO: completar las demas instrucciones (con el tema de incorporar memoria interna y demas)
+
+// Para cada referencia lectura o escritura del Query Interpreter a una página de la Memoria Interna, se 
+// deberá esperar un tiempo definido por archivo de configuración (RETARDO_MEMORIA). 
+
+
+
+
+
+
 
 // Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
@@ -381,36 +440,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     fclose(file);
 }
 
-
-// esto se tiene que borrar luego
-
-// Parseo y dispatch de instrucciones
-/*void ejecutar_instruccion(char* instruccion) {
-    char op[16], arg1[64], arg2[64], arg3[128];
-    int n = sscanf(instruccion, "%s %s %s %s", op, arg1, arg2, arg3); // forma muy improvisada de chequear la cantidad de parametros pasados
-    if (strcmp(op, "CREATE") == 0 && n >= 2) {
-        ejecutar_create(arg1);
-    } else if (strcmp(op, "TRUNCATE") == 0 && n >= 3) {
-        ejecutar_truncate(arg1, atoi(arg2));
-    } else if (strcmp(op, "WRITE") == 0 && n >= 4) {
-        ejecutar_write(arg1, atoi(arg2), arg3);
-    } else if (strcmp(op, "READ") == 0 && n >= 4) {
-        ejecutar_read(arg1, atoi(arg2), atoi(arg3));
-    } else if (strcmp(op, "TAG") == 0 && n >= 3) {
-        ejecutar_tag(arg1, arg2);
-    } else if (strcmp(op, "COMMIT") == 0 && n >= 2) {
-        ejecutar_commit(arg1);
-    } else if (strcmp(op, "FLUSH") == 0 && n >= 2) {
-        ejecutar_flush(arg1);
-    } else if (strcmp(op, "DELETE") == 0 && n >= 2) {
-        ejecutar_delete(arg1);
-    } else if (strcmp(op, "END") == 0) {
-        ejecutar_end();
-    } else {
-        log_error(loggerWorker, "Instrucción inválida: %s", instruccion);
-    }
-}
-
+// ==== Funciones de ejecucion de instrucciones ====
 void ejecutar_create(char* file_tag){
     t_paquete* paquete = crear_paquete(CREATE);
     int tam = strlen(file_tag) + 1;
@@ -421,45 +451,7 @@ void ejecutar_create(char* file_tag){
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
     log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", file_tag);
-}*/
-// DESERIALIZAR EJECUTAR + LLAMADA A EJECUTAR_QUERY
-/*void manejar_ejecutar(void* buffer) {
-    int offset = 0;
-    int pc, tamarch;
-    char *archivo;
-    
-    memcpy(&(pc), buffer + offset, sizeof(int));
-    offset += sizeof(int);
-    
-    memcpy(&(tamarch), buffer + offset, sizeof(int));
-    offset += sizeof(int);
-    
-    archivo = malloc(tamarch + 1);
-    memcpy(archivo, buffer + offset, tamarch);
-    archivo[tamarch] = '\0';
-
-    log_info(loggerWorker, "##Query %d: Se recibe la Query. El path de operaciones es: %s", pc, archivo); // LOG OBLIGATORIO
-    //log_info(loggerWorker, "Manejando EJECUTAR: PC=%d, Archivo=%s", pc, archivo);
-    //intento implementar cheque de interrupt
-    //NUEVO!!!!!
-    while(true){
-        log_info(loggerWorker, "EJECUTANDO....EJECUTANDO....");
-        usleep(3000000);
-        log_info(loggerWorker, "Cheque Interrupcion");
-        if(interrupt){
-            interrupt = false;
-            log_info(loggerWorker, "EL QUERY FUE DESALOJADO CON EXITO");
-            break;
-        }
-
-    }
-    // TODO: Aca va el ciclo de instrucciones
-    //ejecutar_query(pc, archivo); ----->>>>>>>>> HACERRRRR!!!!!
-    log_info(loggerWorker, "FIN DE QUERY ACTUAL");
-    free(archivo);
-
-
-}*/
+}
 
 //revisar si la vamos a necesitar
 /*static void notificar_fin_query(int qid, const char* motivo) { 
@@ -472,6 +464,7 @@ void ejecutar_create(char* file_tag){
 //prueba
 
 // =================== CONEXION A STORAGE ======================= 
+// 1ero) Iniciar conexion a storage
 
 void* iniciar_conexion_storage(void* arg){ 
     (void)arg; // Evitar warning de variable no usada (porque no usamos argumento en este caso)
@@ -500,7 +493,9 @@ void* iniciar_conexion_storage(void* arg){
     }
 //hola jaja
 // tuve que cambiar los loggers de cargar_config de qc y worker a fprintfs solo para testeo por ahora, estabamos usando loggers antes de seren creados 
-    int tamanio_pag = 0;
+    
+    // TAMAÑO BLOQUE = TAMAÑO PAGINA
+    //int tamanio_pag = 0; // ahora es global pq necesitabamos usarla en otras funciones (AHORA ES tamanio_bloque_storage)
     void* buffer = recibir_buffer(socket_storage);
     
     if (buffer == NULL) {
@@ -509,10 +504,10 @@ void* iniciar_conexion_storage(void* arg){
         return NULL;
     }
     
-    memcpy(&tamanio_pag, buffer, sizeof(int));
+    memcpy(&tamanio_bloque_storage, buffer, sizeof(int));
     free(buffer);
 
-    log_info(loggerWorker, "Tamanio de pagina recibido de Storage: %d", tamanio_pag);
+    log_info(loggerWorker, "Tamanio de pagina recibido de Storage: %d", tamanio_bloque_storage);
     log_info(loggerWorker, "Worker listo para interactuar con Storage");
     
     // Señalamos que el storage ya está listo
@@ -521,5 +516,99 @@ void* iniciar_conexion_storage(void* arg){
     pthread_cond_signal(&cond_storage_ready);
     pthread_mutex_unlock(&mutex_storage_ready);
 
+    inicializar_memoria_interna();  // por el momento que este aca!!
+
     return NULL; 
+}
+
+// ======================== Memoria Interna ================================
+
+void inicializar_memoria_interna() {
+    memoria.tamanio_bloque = tamanio_bloque_storage;
+    memoria.tamanio_total = tam_memoria;
+    memoria.cant_bloques = memoria.tamanio_total / memoria.tamanio_bloque;
+    memoria.bloques = calloc(memoria.cant_bloques, sizeof(t_bloque_memoria));
+    memoria.puntero_clock = 0;
+    strcpy(memoria.algoritmo, config_struct->algoritmo_reemplazo);
+    pthread_mutex_init(&memoria.mutex, NULL);
+
+    for (int i = 0; i < memoria.cant_bloques; i++) {
+        memoria.bloques[i].datos = malloc(memoria.tamanio_bloque);
+        memoria.bloques[i].ocupado = false;
+        memoria.bloques[i].modificado = false;
+        memoria.bloques[i].en_uso = false;
+    }
+
+    log_info(loggerWorker, "Memoria Interna inicializada (%d bloques de %d bytes)",
+             memoria.cant_bloques, memoria.tamanio_bloque);    
+} 
+
+// Funciones base
+
+t_bloque_memoria* buscar_bloque(char* tag, int bloque_id) {
+    for (int i = 0; i < memoria.cant_bloques; i++) {
+        if (memoria.bloques[i].ocupado &&
+            strcmp(memoria.bloques[i].file_tag, tag) == 0 &&
+            memoria.bloques[i].bloque_id == bloque_id) {
+            memoria.bloques[i].en_uso = true;
+            memoria.bloques[i].ultima_ref = time(NULL);
+            return &memoria.bloques[i];
+        }
+    }
+    return NULL; // no encontrado el bloque
+}
+
+
+// --- Algoritmos de reemplazo ---
+
+/// posible funcion de clock m
+int reemplazo_clock_modificado() { // revisar 
+    int vueltas = 0;
+    int victima = -1;
+
+    while (true) {
+        t_bloque_memoria* b = &memoria.bloques[memoria.puntero_clock];
+
+        if (b->ocupado) {
+            // Vuelta 1: buscar U=0, M=0
+            if (vueltas == 0 && !b->en_uso && !b->modificado) {
+                victima = memoria.puntero_clock;
+                break;
+            }
+            // Vuelta 2: buscar U=0, M=1
+            else if (vueltas == 1 && !b->en_uso && b->modificado) {
+                victima = memoria.puntero_clock;
+                break;
+            }
+
+            // Si U=1 → lo pongo en 0
+            if (b->en_uso) {
+                b->en_uso = false;
+            }
+        } else {
+            // Bloque libre → lo usamos directamente
+            victima = memoria.puntero_clock;
+            break;
+        }
+
+        // Avanzar puntero circular
+        memoria.puntero_clock = (memoria.puntero_clock + 1) % memoria.cant_bloques;
+
+        // Si di una vuelta completa, paso a la segunda
+        if (memoria.puntero_clock == 0) vueltas++;
+        if (vueltas > 1) break; // si no encontró nada en dos vueltas
+    }
+
+    if (victima == -1)
+        victima = memoria.puntero_clock; // fallback
+
+    log_info(loggerWorker, "CLOCK-M seleccionó bloque víctima: %d (U=%d, M=%d)",
+             victima,
+             memoria.bloques[victima].en_uso,
+             memoria.bloques[victima].modificado);
+
+    // Avanzar el puntero para la próxima ejecución
+    memoria.puntero_clock = (victima + 1) % memoria.cant_bloques;
+
+    return victima;
 }
