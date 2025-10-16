@@ -80,7 +80,7 @@ void initialFile();
 //char *completar_ceros(int aCompletar);
 //==========BITMAP==========
 int buscar_bloque_libre();
-
+char *buscar_bloque_fisico(int nroBloque);
 //==========FORMATO DE ENTRADAS==========
 int calcularAncho();
 

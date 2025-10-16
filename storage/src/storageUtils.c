@@ -12,7 +12,7 @@ char path_blocks[256];
 t_bitarray* bitarray;
 void* mappeo;
 t_dictionary *diccionario_archivos = NULL;
-
+FILE* archBitmap;
 // Hicimos globales para que podamos hacer msync con mappeo y
 // cerrar archBitmap cuuando terminemos de usarlo
 t_log* loggerStorage = NULL;
@@ -21,7 +21,7 @@ t_config *config_SB = NULL;
 t_config_storage *config_struct = NULL;
 t_config_superblock *config_superBlock = NULL;
 char* config_storage;
- 
+
 //==========INICIALIZACION==========
 
 void inicializar_config(void){
@@ -179,10 +179,15 @@ void crear_bitmap() {
     sprintf(pathBitmap, "%s/bitmap.bin", config_struct->punto_montaje);
     FILE* archBitmap = fopen(pathBitmap,"wb+");
     int fildes = fileno(archBitmap);
-    ftruncate(fildes, cantBloq);
+    ftruncate(fildes, cantBloq/8);
     mappeo = mmap(NULL, cantBloq, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
-    bitarray = bitarray_create_with_mode(mappeo, cantBloq, LSB_FIRST);
+    if (mappeo == MAP_FAILED) {
+        log_error(loggerStorage, "Fallo el mappeo del bitmap");
+        exit(EXIT_FAILURE);
+    }
+    bitarray = bitarray_create_with_mode(mappeo, cantBloq/8, LSB_FIRST);
     fclose(archBitmap);
+    
 }
 
 void crear_directorios() {
@@ -216,6 +221,15 @@ void crear_BlocksHashIndex() {
     fclose(archBlocksHashIndex);
 }
 
+char *buscar_bloque_fisico(int nroBloque){
+    char Bloque[256];
+    int anchoEntrada = calcularAncho();
+    sprintf(Bloque,"%0*d", anchoEntrada, nroBloque);
+    char *pathBloq = malloc(256);
+    sprintf(pathBloq, "%s/block%s.dat", path_blocks, Bloque);
+    log_info(loggerStorage, "path del bloque fisico %d : %s",nroBloque,pathBloq);
+    return pathBloq;
+}
 
 void crear_physical_blocks() {
     int anchoEntrada = calcularAncho();
@@ -225,6 +239,7 @@ void crear_physical_blocks() {
         sprintf(nroBloque,"%0*d", anchoEntrada, i);
         sprintf(nombreArch, "%s/block%s.dat", path_blocks, nroBloque);
         FILE *archBloque = fopen(nombreArch, "w+");
+        ftruncate(fileno(archBloque), tam_bloq);
         if(!archBloque) {
             log_error(loggerStorage, "Error al crear el archivo de bloque '%s' : %s", nombreArch, strerror(errno));
             exit(EXIT_FAILURE);
@@ -236,14 +251,24 @@ void crear_physical_blocks() {
 void initialFile(){
     op_create("initial_file","BASE");
     int bloqueInicial = buscar_bloque_libre();
+    bitarray_set_bit(bitarray,bloqueInicial);
+    char *path_bloq = buscar_bloque_fisico(bloqueInicial);
+    FILE *bloqFis = fopen(path_bloq, "w");
+    for(int i = 0; i < tam_bloq;i++){
+        fputc(0,bloqFis);
+        log_info(loggerStorage,"rellenamos con 0 el byte %d del bloque 0",i);
+    }
 }
 
 //==========BITMAP==========
 int buscar_bloque_libre(){
     for(int i = 0; i < cantBloq; i++){
-        if(bitarray_test_bit (bitarray, i) == 1){
+    
+        if(bitarray_test_bit (bitarray, i)==0){
             log_info(loggerStorage, "BLOQUE LIBRE ENCONTRADO %d",i);
             return i;
+        }else{
+            log_info(loggerStorage, "BLOQUE NO LIBRE %d",i);
         }
             
     }

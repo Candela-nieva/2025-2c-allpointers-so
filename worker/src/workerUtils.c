@@ -10,7 +10,6 @@ int socket_master;
 char* config_worker;
 atomic_int hay_interrupt = ATOMIC_VAR_INIT(0);
 int tamanio_bloque_storage = 0; // el antiguo tamanio_pag
-
 t_memoria_interna memoria;
 
 // Sincronización entre hilos
@@ -36,14 +35,14 @@ void inicializar_config(void){
 void cargar_config() {
 
     if(!config_worker){ // solo para chequeo por ahora
-       fprintf(stderr, "Ruta de config no establecida\n");
-       return;
+        fprintf(stderr, "Ruta de config no establecida\n");
+        return;
     }
     config = config_create(config_worker);
 
     if(!config){
-       fprintf(stderr, "No se pudo abrir el archivo de config: %s\n", config_worker);
-       return;
+        fprintf(stderr, "No se pudo abrir el archivo de config: %s\n", config_worker);
+        return;
     }
     config_struct->modulo = config_get_string_value (config, "MODULO");
     config_struct->ip_master = config_get_string_value(config, "IP_MASTER");
@@ -362,11 +361,6 @@ void ejecutar_write(char* tag, int direccion, char* contenido) {
 // deberá esperar un tiempo definido por archivo de configuración (RETARDO_MEMORIA). 
 
 
-
-
-
-
-
 // Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     
@@ -452,6 +446,10 @@ void ejecutar_create(char* file_tag){
     eliminar_paquete(paquete);
     log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", file_tag);
 }
+
+// Comentario dantesco: Tienen dos definiciones de la funcion ejecutar_create
+// Fijense que este es el correcto, pero envien el tamanio antes.
+// Existe la funcion de agregar a paquete un string tmb!! En protocolo
 
 //revisar si la vamos a necesitar
 /*static void notificar_fin_query(int qid, const char* motivo) { 
@@ -540,7 +538,7 @@ void inicializar_memoria_interna() {
     }
 
     log_info(loggerWorker, "Memoria Interna inicializada (%d bloques de %d bytes)",
-             memoria.cant_bloques, memoria.tamanio_bloque);    
+            memoria.cant_bloques, memoria.tamanio_bloque);    
 } 
 
 // Funciones base
@@ -603,9 +601,9 @@ int reemplazo_clock_modificado() { // revisar
         victima = memoria.puntero_clock; // fallback
 
     log_info(loggerWorker, "CLOCK-M seleccionó bloque víctima: %d (U=%d, M=%d)",
-             victima,
-             memoria.bloques[victima].en_uso,
-             memoria.bloques[victima].modificado);
+            victima,
+            memoria.bloques[victima].en_uso,
+            memoria.bloques[victima].modificado);
 
     // Avanzar el puntero para la próxima ejecución
     memoria.puntero_clock = (victima + 1) % memoria.cant_bloques;
