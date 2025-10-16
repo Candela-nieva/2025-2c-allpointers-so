@@ -53,34 +53,46 @@ extern t_config_storage* config_struct;
 extern t_config_superblock* config_superBlock;
 extern char* config_storage;
 extern t_dictionary* diccionario_qcb;
-// =================== MAIN Y BASIC =========================
+//==========INICIALIZACION==========
 void inicializar_config(void);
-void crear_logger();
 void cargar_config();
-void inicializar_montaje();
+void crear_logger();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
+
+//==========CONEXIONES==========
 void iniciar_servidor_multihilo(void);
+
+//==========FRESH_START==========
+void inicializar_montaje();
 void cargar_config_superBlock();
-void formateo();
 void freshStart();
 void verificar_freshStart();
+void formateo();
+//==========ELIMINACION Y CREACION DE ESTRUCTURAS==========
 void limpiar_fs();
 void recrear_fs();
 void crear_bitmap();
 void crear_directorios();
+void crear_directorio(char* path, char* nombreDirectorio, char *nuevoPath);
 void crear_BlocksHashIndex();
 void crear_physical_blocks();
-char *completar_ceros(int aCompletar);
-int calcularAncho();
-bool op_create(char *nombreArch, char *nombreTag);
 void initialFile();
-void crear_directorio(char* path, char* nombreDirectorio, char *nuevoPath);
+//char *completar_ceros(int aCompletar);
+//==========BITMAP==========
+int buscar_bloque_libre();
+
+//==========FORMATO DE ENTRADAS==========
+int calcularAncho();
+
+//==========OPERACIONES==========
+bool op_create(char *nombreArch, char *nombreTag);
+void crear_metadata(char* path, char* nuevoPath);
 
 //============================= FCB Y TAGS ==================================
 t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag);
 t_tag *crear_tag(char *nombreNuevoTag, t_dictionary *diccionarioTagsArch);
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag);
 char *path_Metadata(char *nombreArch, char *nombreTag);
-void crear_metada(char* path, char* nuevoPath);
+
 
 #endif

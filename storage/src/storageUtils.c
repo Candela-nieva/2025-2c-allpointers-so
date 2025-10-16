@@ -6,7 +6,7 @@ bool fresh_start;
 int fs_size;
 int tam_bloq;
 int cantBloq;
-int arrayDeBits[];
+//int arrayDeBits[];
 char path_files[256];
 char path_blocks[256];
 t_bitarray* bitarray;
@@ -21,7 +21,8 @@ t_config *config_SB = NULL;
 t_config_storage *config_struct = NULL;
 t_config_superblock *config_superBlock = NULL;
 char* config_storage;
-
+ 
+//==========INICIALIZACION==========
 
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_storage)); //Reserva memoria
@@ -36,170 +37,6 @@ void inicializar_config(void){
     config_superBlock = malloc(sizeof(t_config_superblock));
     config_superBlock->fs_size = NULL;
     config_superBlock->tam_bloq = NULL;
-}
-
-void cargar_config_superBlock(){
-    char ruta_completa[512];
-    snprintf(ruta_completa, sizeof(ruta_completa), "%s%s", config_struct->punto_montaje, "/superblock.config");
-    config_SB = config_create(ruta_completa);
-    config_superBlock->fs_size = config_get_string_value(config_SB, "FS_SIZE");
-    config_superBlock->tam_bloq = config_get_string_value(config_SB, "BLOCK_SIZE");
-    
-    fs_size = atoi(config_superBlock->fs_size);
-        printf("llegamos a despues");
-
-    tam_bloq = atoi(config_superBlock->tam_bloq);
-    cantBloq = fs_size / tam_bloq; //al ser un bitmap, cada entrada es de 1 bit, por lo que el tamanio es igual a cantBloques bits
-    log_info(loggerStorage,"CantBloques: %d", cantBloq);
-
-    sprintf(path_blocks, "%s/physical_blocks", config_struct->punto_montaje);
-    sprintf(path_files, "%s/files", config_struct->punto_montaje);
-    
-}
-
-void inicializar_montaje(){
-    diccionario_archivos = dictionary_create();
-    cargar_config_superBlock();
-    freshStart();
-    initialFile();
-    log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
-}
-
-void freshStart(){
-    verificar_freshStart();
-    if(fresh_start) {
-        formateo();
-    }
-}
-
-void verificar_freshStart(){
-    if(strcmp((config_struct->fresh_start), "TRUE") == 0){
-        fresh_start = true;
-    }else{
-        fresh_start = false;
-    }
-}
-
-void formateo() {
-    limpiar_fs();
-    recrear_fs();
-}
-
-void limpiar_fs() {
-    char path_bitmap[256];
-    char path_blocks_hash[256];
-
-    sprintf(path_bitmap, "%s/bitmap.bin", config_struct->punto_montaje);
-    sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
-
-    char cmd[512];
-    sprintf(cmd, "rm -rf %s/bitmap.bin %s/blocks_hash_index.config %s/physical_blocks %s/files",
-            config_struct->punto_montaje, config_struct->punto_montaje,
-            config_struct->punto_montaje, config_struct->punto_montaje);
-    system(cmd);
-}
-
-void recrear_fs() {
-    crear_bitmap();
-    crear_directorios();
-    crear_BlocksHashIndex();
-}
-
-void crear_directorios() {
-    crear_directorio(config_struct->punto_montaje, "files", NULL);
-    crear_directorio(config_struct->punto_montaje, "physical_blocks", NULL);
-    crear_physical_blocks();
-}
-
-void crear_BlocksHashIndex() {
-    char pathBlocksHashIndex[256];
-    sprintf(pathBlocksHashIndex, "%s/blocks_hash_index.config", config_struct->punto_montaje);
-    FILE* archBlocksHashIndex = fopen(pathBlocksHashIndex,"w+");
-    if(!archBlocksHashIndex) {
-        log_error(loggerStorage, "Error al crear el archivo 'blocks_hash_index.config': %s", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-    fclose(archBlocksHashIndex);
-}
-
-void crear_metadata (char* path, char* nuevoPath) {
-    char pathConfig [256];
-    sprintf(pathConfig, "%s/metadata.config", path);
-    FILE* archivo = fopen(pathConfig, "w+");
-    if(!archivo) {
-        log_error(loggerStorage, "Error al crear el archivo 'metadata.config': %s", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-    fputs("TAMAÑO=0\n",archivo);
-    fputs("BLOCKS=[]\n",archivo);
-    fputs("ESTADO=WORK_IN_PROGRESS\n",archivo);
-
-    fclose(archivo);
-    if(nuevoPath != NULL){
-        strcpy(nuevoPath,pathConfig);
-    }
-}
-
-void crear_physical_blocks() {
-    int anchoEntrada = calcularAncho();
-    char nombreArch[256];
-    char nroBloque[256];
-    for(int i=0; i < cantBloq; i++){
-        sprintf(nroBloque,"%0*d", anchoEntrada, i);
-        sprintf(nombreArch, "%s/block%s.dat", path_blocks, nroBloque);
-        FILE *archBloque = fopen(nombreArch, "w+");
-        if(!archBloque) {
-            log_error(loggerStorage, "Error al crear el archivo de bloque '%s' : %s", nombreArch, strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-        fclose(archBloque);
-    }
-}
-
-int calcularAncho(){
-    int ancho = 1;
-    int aux = cantBloq - 1;
-
-    while(aux >= 10){
-        ancho++;
-        aux /= 10;
-    }
-    
-    log_info(loggerStorage,"CANT CIFRAS = %d", ancho);
-    return ancho;
-}
-
-char *completar_ceros(int aCompletar){
-    char aux[256];
-    sprintf(aux,"%04d",aCompletar);
-    return aux;
-}
-
-void crear_bitmap() {
-    //char *pathBitmap = strcat(config_struct->punto_montaje,"/bitmap.bin/");
-    char pathBitmap[256];
-    sprintf(pathBitmap, "%s/bitmap.bin", config_struct->punto_montaje);
-    FILE* archBitmap = fopen(pathBitmap,"wb+");
-    int fildes = fileno(archBitmap);
-    ftruncate(fildes, cantBloq);
-    mappeo = mmap(NULL, cantBloq, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
-    bitarray = bitarray_create_with_mode(mappeo, cantBloq, LSB_FIRST);
-    fclose(archBitmap);
-}
-
-
-void crear_directorio(char* path, char* nombreDirectorio, char *nuevoPath) {
-    char directorio[256];
-    sprintf(directorio, "%s/%s", path, nombreDirectorio);
-    if(mkdir(directorio, 0755) == -1) {
-        if (errno != EEXIST) {
-            log_error(loggerStorage, "Error al crear el directorio '%s': %s", nombreDirectorio, strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-    }
-    if(nuevoPath != NULL){
-        strcpy(nuevoPath,directorio);   //en caso de que querramos conservar el path del nuevo directorio, sino pasamos NULL
-    }
 }
 
 void cargar_config() {
@@ -218,6 +55,10 @@ void cargar_config() {
 }
 
 // Función para iniciar el logger
+void crear_logger () {
+    loggerStorage=iniciar_logger("storage.log","STORAGE",true, log_level_from_string(config_struct->log_level));
+}
+
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle){
 	t_log* nuevo_logger;
 	nuevo_logger = log_create(nombreArchivoLog, nombreLog, seMuestraEnConsola, nivelDetalle);
@@ -228,9 +69,9 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 	return nuevo_logger;
 }
 
-void crear_logger () {
-    loggerStorage=iniciar_logger("storage.log","STORAGE",true, log_level_from_string(config_struct->log_level));
-}
+
+
+//==========CONEXIONES==========
 
 void iniciar_servidor_multihilo(void)
 {
@@ -260,11 +101,180 @@ void iniciar_servidor_multihilo(void)
     return;
 }
 
-void initialFile(){
-    op_create("initial_file","BASE");
+//==========FRESH_START==========
+
+void inicializar_montaje(){
+    diccionario_archivos = dictionary_create();
+    cargar_config_superBlock();
+    freshStart();
+    initialFile();
+    log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
 }
 
-//OPERACIONES DE STORAGE
+void cargar_config_superBlock(){
+    char ruta_completa[512];
+    snprintf(ruta_completa, sizeof(ruta_completa), "%s%s", config_struct->punto_montaje, "/superblock.config");
+    config_SB = config_create(ruta_completa);
+    config_superBlock->fs_size = config_get_string_value(config_SB, "FS_SIZE");
+    config_superBlock->tam_bloq = config_get_string_value(config_SB, "BLOCK_SIZE");
+    
+    fs_size = atoi(config_superBlock->fs_size);
+        printf("llegamos a despues");
+
+    tam_bloq = atoi(config_superBlock->tam_bloq);
+    cantBloq = fs_size / tam_bloq; //al ser un bitmap, cada entrada es de 1 bit, por lo que el tamanio es igual a cantBloques bits
+    log_info(loggerStorage,"CantBloques: %d", cantBloq);
+
+    sprintf(path_blocks, "%s/physical_blocks", config_struct->punto_montaje);
+    sprintf(path_files, "%s/files", config_struct->punto_montaje);
+    
+}
+
+
+
+void freshStart(){
+    verificar_freshStart();
+    if(fresh_start) {
+        formateo();
+    }
+}
+
+void verificar_freshStart(){
+    if(strcmp((config_struct->fresh_start), "TRUE") == 0){
+        fresh_start = true;
+    }else{
+        fresh_start = false;
+    }
+}
+
+void formateo() {
+    limpiar_fs();
+    recrear_fs();
+}
+
+//==========ELIMINACION Y CREACION DE ESTRUCTURAS==========
+
+void limpiar_fs() {
+    char path_bitmap[256];
+    char path_blocks_hash[256];
+
+    sprintf(path_bitmap, "%s/bitmap.bin", config_struct->punto_montaje);
+    sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
+
+    char cmd[512];
+    sprintf(cmd, "rm -rf %s/bitmap.bin %s/blocks_hash_index.config %s/physical_blocks %s/files",
+            config_struct->punto_montaje, config_struct->punto_montaje,
+            config_struct->punto_montaje, config_struct->punto_montaje);
+    system(cmd);
+}
+
+void recrear_fs() {
+    crear_bitmap();
+    crear_directorios();
+    crear_BlocksHashIndex();
+}
+
+void crear_bitmap() {
+    char pathBitmap[256];
+    sprintf(pathBitmap, "%s/bitmap.bin", config_struct->punto_montaje);
+    FILE* archBitmap = fopen(pathBitmap,"wb+");
+    int fildes = fileno(archBitmap);
+    ftruncate(fildes, cantBloq);
+    mappeo = mmap(NULL, cantBloq, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
+    bitarray = bitarray_create_with_mode(mappeo, cantBloq, LSB_FIRST);
+    fclose(archBitmap);
+}
+
+void crear_directorios() {
+    crear_directorio(config_struct->punto_montaje, "files", NULL);
+    crear_directorio(config_struct->punto_montaje, "physical_blocks", NULL);
+    crear_physical_blocks();
+}
+
+void crear_directorio(char* path, char* nombreDirectorio, char *nuevoPath) {
+    char directorio[256];
+    sprintf(directorio, "%s/%s", path, nombreDirectorio);
+    if(mkdir(directorio, 0755) == -1) {
+        if (errno != EEXIST) {
+            log_error(loggerStorage, "Error al crear el directorio '%s': %s", nombreDirectorio, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+    if(nuevoPath != NULL){
+        strcpy(nuevoPath,directorio);   //en caso de que querramos conservar el path del nuevo directorio, sino pasamos NULL
+    }
+}
+
+void crear_BlocksHashIndex() {
+    char pathBlocksHashIndex[256];
+    sprintf(pathBlocksHashIndex, "%s/blocks_hash_index.config", config_struct->punto_montaje);
+    FILE* archBlocksHashIndex = fopen(pathBlocksHashIndex,"w+");
+    if(!archBlocksHashIndex) {
+        log_error(loggerStorage, "Error al crear el archivo 'blocks_hash_index.config': %s", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    fclose(archBlocksHashIndex);
+}
+
+
+void crear_physical_blocks() {
+    int anchoEntrada = calcularAncho();
+    char nombreArch[256];
+    char nroBloque[256];
+    for(int i=0; i < cantBloq; i++){
+        sprintf(nroBloque,"%0*d", anchoEntrada, i);
+        sprintf(nombreArch, "%s/block%s.dat", path_blocks, nroBloque);
+        FILE *archBloque = fopen(nombreArch, "w+");
+        if(!archBloque) {
+            log_error(loggerStorage, "Error al crear el archivo de bloque '%s' : %s", nombreArch, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        fclose(archBloque);
+    }
+}
+
+void initialFile(){
+    op_create("initial_file","BASE");
+    int bloqueInicial = buscar_bloque_libre();
+}
+
+//==========BITMAP==========
+int buscar_bloque_libre(){
+    for(int i = 0; i < cantBloq; i++){
+        if(bitarray_test_bit (bitarray, i) == 1){
+            log_info(loggerStorage, "BLOQUE LIBRE ENCONTRADO %d",i);
+            return i;
+        }
+            
+    }
+    log_info(loggerStorage, "NO SE ENCONTRO BLOQUE LIBRE");
+    return -1;
+}
+
+//==========FORMATO DE LAS ENTRADAS==========
+
+int calcularAncho(){
+    int ancho = 1;
+    int aux = cantBloq - 1;
+
+    while(aux >= 10){
+        ancho++;
+        aux /= 10;
+    }
+    
+    log_info(loggerStorage,"CANT CIFRAS = %d", ancho);
+    return ancho;
+}
+
+/*char *completar_ceros(int aCompletar){
+    char aux[256];
+    sprintf(aux,"%04d",aCompletar);
+    return aux;
+}*/
+
+
+
+//==========OPERACIONES==========
 
 bool op_create(char *nombreArch, char *nombreTag){
     char initial[256];
@@ -279,10 +289,36 @@ bool op_create(char *nombreArch, char *nombreTag){
     return true;
 }
 
-//LIBERAR DESPUES!!
-char *path_Metadata(char *nombreArch, char *nombreTag){
-    return string_from_format("%s/%s/%s/metadata.config", path_files, nombreArch, nombreTag);
+void crear_metadata (char* path, char* nuevoPath) {
+    char pathConfig [256];
+    sprintf(pathConfig, "%s/metadata.config", path);
+    FILE* archivo = fopen(pathConfig, "w+");
+    if(!archivo) {
+        log_error(loggerStorage, "Error al crear el archivo 'metadata.config': %s", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    fputs("TAMAÑO=0\n",archivo);
+    fputs("BLOCKS=[]\n",archivo);
+    fputs("ESTADO=WORK_IN_PROGRESS\n",archivo);
+
+    fclose(archivo);
+    if(nuevoPath != NULL){
+        strcpy(nuevoPath,pathConfig);
+    }
 }
+
+
+//==========ADMINISTRACION DE ARCHIVOS Y TAGS==========
+/*char *path_Metadata(char *nombreArch, char *nombreTag){
+    return string_from_format("%s/%s/%s/metadata.config", path_files, nombreArch, nombreTag);
+}*/
+char *path_Metadata(char *nombreArch, char *nombreTag){
+    char *metadata = malloc(256); // reservo memoria dinámica
+    if (!metadata) return NULL;
+    sprintf(metadata, "%s/%s/%s/metadata.config", path_files, nombreArch, nombreTag);
+    return metadata;
+}
+
 
 t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
     t_fcb *fcb = malloc(sizeof(t_fcb));
