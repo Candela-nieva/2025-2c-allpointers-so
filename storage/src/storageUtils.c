@@ -250,14 +250,15 @@ void crear_physical_blocks() {
 
 void initialFile(){
     op_create("initial_file","BASE");
-    int bloqueInicial = buscar_bloque_libre();
+    op_trunc("initial_file","BASE",tam_bloq);
+    /*int bloqueInicial = buscar_bloque_libre();
     bitarray_set_bit(bitarray,bloqueInicial);
     char *path_bloq = buscar_bloque_fisico(bloqueInicial);
     FILE *bloqFis = fopen(path_bloq, "w");
     for(int i = 0; i < tam_bloq;i++){
         fputc(0,bloqFis);
-        log_info(loggerStorage,"rellenamos con 0 el byte %d del bloque 0",i);
     }
+    free(path_bloq);*/
 }
 
 //==========BITMAP==========
@@ -291,13 +292,6 @@ int calcularAncho(){
     return ancho;
 }
 
-/*char *completar_ceros(int aCompletar){
-    char aux[256];
-    sprintf(aux,"%04d",aCompletar);
-    return aux;
-}*/
-
-
 
 //==========OPERACIONES==========
 
@@ -312,6 +306,24 @@ bool op_create(char *nombreArch, char *nombreTag){
     crear_fcb(nombreArch, nombreTag);
 
     return true;
+}
+
+bool op_trunc(char *nombreArch, char *nombreTag, int size){
+    t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
+    if(size > tag->tamanio){
+        int aux = size;
+        while(aux > 0){
+            int bloqueInicial = buscar_bloque_libre();
+            bitarray_set_bit(bitarray,bloqueInicial);
+            list_add(tag->physicalBlocks,bloqueInicial);
+            char *path_bloq = buscar_bloque_fisico(bloqueInicial);
+            crear_bloq_log(tag,path_bloq);
+            aux -= tam_bloq;
+        }
+        return true;
+    }else{
+        return true;
+    }
 }
 
 void crear_metadata (char* path, char* nuevoPath) {
@@ -349,16 +361,21 @@ t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
     t_fcb *fcb = malloc(sizeof(t_fcb));
     fcb->nombreArch = nombreNuevoArch;
     fcb->tags = dictionary_create();
-    t_tag *nuevoTag = crear_tag(nombreNuevoTag, fcb->tags);
+    t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreNuevoArch, fcb->tags);
     dictionary_put(diccionario_archivos,fcb->nombreArch,fcb);
     return fcb;
 }
 
-t_tag *crear_tag(char *nombreNuevoTag, t_dictionary *diccionarioTagsArch){
+t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionarioTagsArch){
     t_tag *tag = malloc(sizeof(t_tag));
+    char *pathNuevoTag = malloc(256); 
+    sprintf(pathNuevoTag, "%s/%s/%s", path_files, nombreArch, nombreNuevoTag);
+    tag->pathTag = pathNuevoTag;
+    log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag );
     tag->nombreTag = nombreNuevoTag;
     tag->tamanio = 0;
-    tag->physicalBlocks = NULL;
+    tag->physicalBlocks = list_create();
+    tag->logBlocks = list_create();
     tag->estado = WIP;
     dictionary_put(diccionarioTagsArch, tag->nombreTag, tag);
     return tag;
@@ -370,3 +387,17 @@ t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
     return tag;
 }
 
+void crear_bloq_log(t_tag *tag,char *bloq_fis){
+    int nroBloqLog = list_size(tag->physicalBlocks);
+    char bloqLog[256];
+    sprintf(bloqLog, "%06d.dat",nroBloqLog);
+    char *pathBlockLog = malloc(256);
+    sprintf(pathBlockLog, "%s/logical_blocks/%s", tag->pathTag,bloqLog);
+    log_info(loggerStorage,"Nuevo Bloq Log = %s", pathBlockLog);
+    FILE *bloqL = fopen(pathBlockLog, "w+");
+    ftruncate(fileno(bloqL), tam_bloq);
+    link(bloq_fis,pathBlockLog);
+    fclose(bloqL);
+    free(pathBlockLog);
+    list_add(tag->logBlocks,nroBloqLog);
+}

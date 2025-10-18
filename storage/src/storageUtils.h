@@ -41,8 +41,11 @@ typedef struct {
 
 typedef struct {
     char* nombreTag;
+    char* pathTag;
     size_t tamanio;
-    int *physicalBlocks;
+    //usar listas para saber que bloques ocupa?
+    t_list *physicalBlocks;
+    t_list *logBlocks;
     t_estadoTag estado;
 }t_tag;
 
@@ -86,13 +89,14 @@ int calcularAncho();
 
 //==========OPERACIONES==========
 bool op_create(char *nombreArch, char *nombreTag);
+bool op_trunc(char *nombreArch, char *nombreTag, int size);
 void crear_metadata(char* path, char* nuevoPath);
 
 //============================= FCB Y TAGS ==================================
 t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag);
-t_tag *crear_tag(char *nombreNuevoTag, t_dictionary *diccionarioTagsArch);
+t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionarioTagsArch);
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag);
 char *path_Metadata(char *nombreArch, char *nombreTag);
-
+void crear_bloq_log(t_tag *tag,char *bloq_fis);
 
 #endif
