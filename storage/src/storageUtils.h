@@ -49,6 +49,12 @@ typedef struct {
     t_estadoTag estado;
 }t_tag;
 
+typedef struct {
+    int tamanio;
+    t_list* blocks;  // lista de bloques (enteros)
+    char* estado;    // "WIP" o "COMMIT"
+} metadata_t;
+
 extern t_log* loggerStorage;
 extern t_config* config;
 extern t_config* config_SB;
@@ -98,5 +104,12 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag);
 char *path_Metadata(char *nombreArch, char *nombreTag);
 void crear_bloq_log(t_tag *tag,char *bloq_fis);
+char *buscar_bloq_logico(t_tag *tag, int nroBloqLog);
 
+//=========================== RECIEN SALIDAS DEL HORNO ===========================
+void destruir_metadata(metadata_t* meta);
+bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio);
+void marcar_libre_en_bitmap(int nro_fisico);
+metadata_t* leer_metadata(char* archivo, char* nombreTag);
+void guardar_metadata(metadata_t* meta, char* archivo, char* nombreTag);
 #endif

@@ -187,7 +187,7 @@ void crear_bitmap() {
     }
     bitarray = bitarray_create_with_mode(mappeo, cantBloq/8, LSB_FIRST);
     fclose(archBitmap);
-    
+    // tal vez hay que sacar este fclose por lo que dijeron en el foro!!!!!!!!!
 }
 
 void crear_directorios() {
@@ -306,6 +306,185 @@ bool op_create(char *nombreArch, char *nombreTag){
     crear_fcb(nombreArch, nombreTag);
 
     return true;
+}
+
+metadata_t* leer_metadata(char* archivo, char* nombreTag) {
+    t_tag *tag = buscar_Tag_Arch(archivo, nombreTag);
+    // 1. Armar el path del archivo metadata
+    char* path_metadata = path_Metadata(archivo, nombreTag);
+
+    // 2. Crear estructura config
+    t_config* config = config_create(path_metadata);
+    if (config == NULL) {
+        log_error(loggerStorage, "No se pudo abrir metadata %s", path_metadata);
+        return NULL;
+    }
+
+    // 3. Crear estructura para devolver
+    metadata_t* meta = malloc(sizeof(metadata_t));
+
+    // 4. Leer el tamaño
+    meta->tamanio = config_get_int_value(config, "TAMAÑO");
+
+    // 5. Leer el estado
+    meta->estado = strdup(config_get_string_value(config, "ESTADO"));
+
+    // 6. Leer el array de bloques
+    char** array_blocks = config_get_array_value(config, "BLOCKS");
+
+    meta->blocks = list_create();
+    for (int i = 0; array_blocks[i] != NULL; i++) {
+        list_add(meta->blocks, (void*) atoi(array_blocks[i]));
+    }
+
+    // 7. Cerrar el config
+    config_destroy(config);
+    free(path_metadata);
+    return meta;
+}
+
+bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
+    metadata_t* meta = leer_metadata(nombreArch, nombreTag);
+    if (!meta) return false;
+
+    int bloques_actuales = meta->tamanio / tam_bloq;
+    int bloques_nuevos = nuevoTamanio / tam_bloq;
+
+    t_tag* tag = buscar_Tag_Arch(nombreArch, nombreTag);
+    if (!tag) {
+        log_error(loggerStorage, "Tag no encontrado %s:%s", nombreArch, nombreTag);
+        destruir_metadata(meta);
+        return false;
+    }
+    int ancho = calcularAncho();
+
+    if (bloques_nuevos > bloques_actuales) {
+        char path_block0[512];
+        sprintf(path_block0, "%s/block%0*d.dat", path_blocks, ancho, 0);
+
+        for (int i = bloques_actuales; i < bloques_nuevos; i++) {
+            // agregar bloque lógico apuntando al bloque físico 0
+            int* cero = malloc(sizeof(int));
+            *cero = 0;
+            list_add(meta->blocks, cero);
+
+            char nro[32];
+            sprintf(nro, "%0*d.dat", ancho, i);
+            char path_logical[256];
+            sprintf(path_logical, "%s/logical_blocks/%s", tag->pathTag, nro);
+            unlink(path_logical);
+
+            if (link(path_block0, path_logical) == -1) {
+                log_error(loggerStorage, "Link a block0 falló: %s", strerror(errno));
+                destruir_metadata(meta);
+                return false;
+            }
+            log_info(loggerStorage, "## Hard Link Agregado - %s:%s - Lógico %d -> Físico 0", nombreArch, nombreTag, i);
+        }
+    } else if (bloques_nuevos < bloques_actuales) {
+        for (int i = bloques_actuales - 1; i >= bloques_nuevos; i--) {
+            int* pbloqfis = list_get(meta->blocks, i);
+            int bloque_fisico = pbloqfis ? *pbloqfis : 0;
+
+            // eliminar hardlink lógico, se puede hacer una funcion xq se repite
+            char nro[32];
+            sprintf(nro, "%0*d.dat", ancho, i);
+            char path_logical[256];
+            sprintf(path_logical, "%s/logical_blocks/%s", tag->pathTag, nro);
+            unlink(path_logical);
+
+            // revisar nlink del físico
+            char path_fisico[256];
+            sprintf(path_fisico, "%s/block%0*d.dat", path_blocks, ancho, bloque_fisico);
+            
+            struct stat st;
+            if (stat(path_fisico, &st) == 0) {
+                if (st.st_nlink == 1 && bloque_fisico != 0) {
+                    marcar_libre_en_bitmap(bloque_fisico);
+                }
+            }
+
+            int* pfis = list_remove(meta->blocks, i);
+            if (pfis)
+                free(pfis);
+
+            log_info(loggerStorage, "## Hard Link Eliminado - %s:%s - Lógico %d -> Físico %d", nombreArch, nombreTag, i, bloque_fisico);
+        }
+    }
+
+    meta->tamanio = nuevoTamanio;
+    guardar_metadata(meta, nombreArch, nombreTag);
+    log_info(loggerStorage, "## File Truncado %s:%s - Tamaño: %d", nombreArch, nombreTag, nuevoTamanio);
+    destruir_metadata(meta);
+    return true;
+}
+
+void marcar_libre_en_bitmap(int nro_fisico) {
+    if (nro_fisico <= 0 || nro_fisico >= cantBloq)
+        return;
+    bitarray_clean_bit(bitarray, nro_fisico);
+    size_t bytes_bitmap = (cantBloq + 7) / 8;
+    msync(mappeo, bytes_bitmap, MS_SYNC);
+    log_info(loggerStorage, "## Bloque Físico Liberado - Número de Bloque: %d", nro_fisico);
+}
+
+void guardar_metadata(metadata_t* meta, char* archivo, char* nombreTag) {
+    char* path_meta = path_Metadata(archivo, nombreTag);
+
+    // Asegurar que existe el archivo
+    FILE* f = fopen(path_meta, "r");
+    if (!f)
+        f = fopen(path_meta, "w");
+    if (f)
+        fclose(f);
+
+    t_config* config = config_create(path_meta);
+    if (!config) {
+        log_error(loggerStorage, "No se pudo abrir (para guardar) metadata: %s", path_meta);
+        free(path_meta);
+        return;
+    }
+
+    // TAMAÑO
+    char tamanio_str[32];
+    sprintf(tamanio_str, "%d", meta->tamanio);
+    config_set_value(config, "TAMAÑO", tamanio_str);
+
+    // ESTADO
+    config_set_value(config, "ESTADO", meta->estado);
+
+    // BLOCKS
+    // Construir string tipo [17,2,5]
+    char buf[4096];
+    char tmp[64];
+    buf[0] = '\0';
+    strcat(buf, "[");
+
+    int n = list_size(meta->blocks);
+    for (int i = 0; i < n; i++) {
+        int* v = list_get(meta->blocks, i);
+        sprintf(tmp, "%d", *v);
+        strcat(buf, tmp);
+        if (i < n - 1) strcat(buf, ",");
+    }
+    strcat(buf, "]");
+    config_set_value(config, "BLOCKS", buf);
+
+    config_save(config);
+    config_destroy(config);
+    free(path_meta);
+}
+
+void destruir_metadata(metadata_t* meta) {
+    if (!meta)
+        return;
+    if (meta->estado)
+        free(meta->estado);
+    if (meta->blocks) {
+        void liberar_int(void* x) { free(x); }
+        list_destroy_and_destroy_elements(meta->blocks, liberar_int);
+    }
+    free(meta);
 }
 
 /*bool op_trunc(char *nombreArch, char *nombreTag, int size){
