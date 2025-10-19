@@ -308,7 +308,7 @@ bool op_create(char *nombreArch, char *nombreTag){
     return true;
 }
 
-bool op_trunc(char *nombreArch, char *nombreTag, int size){
+/*bool op_trunc(char *nombreArch, char *nombreTag, int size){
     t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
     if(size > tag->tamanio){
         int aux = size;
@@ -325,7 +325,7 @@ bool op_trunc(char *nombreArch, char *nombreTag, int size){
         return true;
     }
 }
-
+*/
 void crear_metadata (char* path, char* nuevoPath) {
     char pathConfig [256];
     sprintf(pathConfig, "%s/metadata.config", path);
@@ -387,7 +387,7 @@ t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
     return tag;
 }
 
-void crear_bloq_log(t_tag *tag,char *bloq_fis){
+/*void crear_bloq_log(t_tag *tag,char *bloq_fis){
     int nroBloqLog = list_size(tag->physicalBlocks);
     char bloqLog[256];
     sprintf(bloqLog, "%06d.dat",nroBloqLog);
@@ -400,4 +400,65 @@ void crear_bloq_log(t_tag *tag,char *bloq_fis){
     fclose(bloqL);
     free(pathBlockLog);
     list_add(tag->logBlocks,nroBloqLog);
+}*/
+
+bool op_trunc(char *nombreArch, char *nombreTag, int size){
+    t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
+    int cantBloques = ceil(size / tam_bloq); //cant de celdas a asignar / liberar
+    if(size > tag->tamanio){
+        //int aux = size;
+        while(cantBloques > 0){
+            int bloqueLibre = buscar_bloque_libre();
+            bitarray_set_bit(bitarray,bloqueLibre);
+            list_add(tag->physicalBlocks,bloqueLibre);
+            char *path_bloqLib = buscar_bloque_fisico(bloqueLibre);
+            crear_bloq_log(tag,path_bloqLib);
+            cantBloques--;
+        }
+        tag->tamanio = size;
+        return true;
+    }else{
+        int cantBloquesElim = ceil(tag->tamanio / tam_bloq) - size;
+        while(cantBloquesElim > 0){
+            eliminar_bloq_log(tag);
+            cantBloquesElim--;
+        }
+        tag->tamanio = size;
+        return true;
+    }
+}
+//elimina su ultimo bloq_log
+void eliminar_bloq_log(t_tag *tag){
+    if(list_size(tag->logBlocks) > 0){
+    int nroBloqLog = (list_size(tag->logBlocks) - 1); //representa el ultimo bloque logico
+    char *pathBlockLog  = buscar_bloq_logico(tag, nroBloqLog);
+    log_info(loggerStorage,"Bloq Log a Eliminar= %s", pathBlockLog);
+    char cmd[512];
+    sprintf(cmd, "rm -rf %s",pathBlockLog);
+    system(cmd);
+    list_remove(tag->logBlocks,nroBloqLog);
+    free(pathBlockLog);
+    }else{
+        log_info(loggerStorage,"No hay bloque logico que eliminar");
+    }
+}
+
+void crear_bloq_log(t_tag *tag,char *bloq_fis){
+    int nroBloqLog = list_size(tag->logBlocks); //representa el siguiente bloque logico a crear
+    char *pathBlockLog  = buscar_bloq_logico(tag, nroBloqLog);
+    log_info(loggerStorage,"Nuevo Bloq Log = %s", pathBlockLog);
+    FILE *bloqL = fopen(pathBlockLog, "w+");
+    ftruncate(fileno(bloqL), tam_bloq);
+    link(bloq_fis,pathBlockLog);
+    fclose(bloqL);
+    free(pathBlockLog);
+    list_add(tag->logBlocks,nroBloqLog);
+}
+
+char *buscar_bloq_logico(t_tag *tag, int nroBloqLog){
+    char bloqLog[256];
+    sprintf(bloqLog, "%06d.dat",nroBloqLog);
+    char *pathBlockLog = malloc(256);
+    sprintf(pathBlockLog, "%s/logical_blocks/%s", tag->pathTag,bloqLog);
+    return pathBlockLog;
 }
