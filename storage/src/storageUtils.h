@@ -101,16 +101,18 @@ void crear_metadata(char* path, char* nuevoPath);
 void destruir_metadata(t_metadata* meta);
 t_metadata* leer_metadata(char* archivo, char* nombreTag);
 void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag);
+bool agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0);
+void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico);
 //============================= FCB Y TAGS ==================================
 t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag);
 t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionarioTagsArch);
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag);
 char *path_Metadata(char *nombreArch, char *nombreTag);
-void eliminar_bloq_log(t_tag *tag);
+//void eliminar_bloq_log(t_tag *tag);
 char *buscar_bloq_logico(t_tag *tag, int nroBloqLog);
-char* crear_bloq_log(t_tag *tag, t_metadata *meta,int nro);
+char* crear_bloq_log(char* pathTag, t_metadata *meta,int nro);
+void eliminar_bloq_log (char* pathTag, int nro);
 
-void agrandar_tamanio(t_tag *tag,t_metadata *meta, int bloques_nuevos, int bloques_actuales);
 
 
 #endif

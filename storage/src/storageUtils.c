@@ -345,8 +345,7 @@ t_metadata* leer_metadata(char* archivo, char* nombreTag) {
     free(path_metadata);
     return meta;
 }
-
-char* crear_bloq_log(t_tag *tag, t_metadata *meta,int nro){
+char* crear_bloq_log(char* pathTag, t_metadata *meta,int nro){
     int* cero = malloc(sizeof(int));
     *cero = 0;
     list_add(meta->blocks, cero);
@@ -355,25 +354,49 @@ char* crear_bloq_log(t_tag *tag, t_metadata *meta,int nro){
     sprintf(nombreBloq, "%06d.dat", nro);
 
     char *path_logical = malloc(256);
-    sprintf(path_logical, "%s/logical_blocks/%s", tag->pathTag, nombreBloq);
+    sprintf(path_logical, "%s/logical_blocks/%s", pathTag, nombreBloq);
 
     return path_logical;
 }
 
-void agrandar_tamanio(t_tag *tag,t_metadata *meta, int bloques_nuevos, int bloques_actuales){
-    char *path_block0 = buscar_bloque_fisico(0);
-    for (int i = bloques_actuales; i < bloques_nuevos; i++) {
-        char *path_logical = crear_bloq_log(tag,meta,i);
+bool agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0) {
+    char *path_logical = crear_bloq_log(pathTag, meta, nro);
         if (link(path_block0, path_logical) == -1) {
             log_error(loggerStorage, "Link a block0 falló: %s", strerror(errno));
             destruir_metadata(meta);
-            //return false;
-        }    
-        //ARREGLAR EL TEMA DE LOS COMENTARIOS
-        log_info(loggerStorage, "## Hard Link Agregado - Lógico %d -> Físico 0", i);
-        free(path_logical);
+            return false;
         }
-    free(path_block0);
+    free(path_logical);
+    return true;
+}
+
+void eliminar_bloq_log (char* pathTag, int nro) {
+    // eliminar hardlink lógico, se puede hacer una funcion xq se repite
+    char nombreBloq[32];
+    sprintf(nombreBloq, "%06d.dat", nro);
+    char path_logical[256];
+    sprintf(path_logical, "%s/logical_blocks/%s", pathTag, nombreBloq);
+    unlink(path_logical);
+}
+
+void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico) {
+
+    eliminar_bloq_log(pathTag, nro);
+
+    // revisar nlink del físico
+    char path_fisico[512];
+    sprintf(path_fisico, "%s/block%0*d.dat", path_blocks, ancho, bloque_fisico);
+
+    struct stat st;
+    if (stat(path_fisico, &st) == 0) {
+        if (st.st_nlink == 1 && bloque_fisico != 0) {
+            marcar_libre_en_bitmap(bloque_fisico);
+        }
+    }
+
+    int* pfis = list_remove(meta->blocks, nro);
+    if (pfis)
+        free(pfis);
 }
 
 bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
@@ -392,54 +415,28 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
     int ancho = calcularAncho();
 
     if (bloques_nuevos > bloques_actuales) {
-        agrandar_tamanio(tag,meta,bloques_nuevos,bloques_actuales);
-        /*char *path_block0 = buscar_bloque_fisico(0);
+        char *path_block0 = buscar_bloque_fisico(0);
         for (int i = bloques_actuales; i < bloques_nuevos; i++) {
-            char *path_logical = crear_bloq_log(tag,meta,i);
-            if (link(path_block0, path_logical) == -1) {
-                log_error(loggerStorage, "Link a block0 falló: %s", strerror(errno));
+            if(!agrandarArchivo(meta, tag->pathTag, i, path_block0)) {
+                free(path_block0);
                 destruir_metadata(meta);
                 return false;
             }
-            
-            log_info(loggerStorage, "## Hard Link Agregado - %s:%s - Lógico %d -> Físico 0", nombreArch, nombreTag, i);
-            free(path_logical);
+            log_info(loggerStorage, "##<QUERY_ID> - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico 0", nombreArch, nombreTag, i);
         }
-        free(path_block0);*/
+        free(path_block0);
     } else if (bloques_nuevos < bloques_actuales) {
         for (int i = bloques_actuales - 1; i >= bloques_nuevos; i--) {
             int* pbloqfis = list_get(meta->blocks, i);
             int bloque_fisico = pbloqfis ? *pbloqfis : 0;
-
-            // eliminar hardlink lógico, se puede hacer una funcion xq se repite
-            char nro[32];
-            sprintf(nro, "%06d.dat", i);
-            char path_logical[256];
-            sprintf(path_logical, "%s/logical_blocks/%s", tag->pathTag, nro);
-            unlink(path_logical);
-
-            // revisar nlink del físico
-            char path_fisico[512];
-            sprintf(path_fisico, "%s/block%0*d.dat", path_blocks, ancho, bloque_fisico);
-            
-            struct stat st;
-            if (stat(path_fisico, &st) == 0) {
-                if (st.st_nlink == 1 && bloque_fisico != 0) {
-                    marcar_libre_en_bitmap(bloque_fisico);
-                }
-            }
-
-            int* pfis = list_remove(meta->blocks, i);
-            if (pfis)
-                free(pfis);
-
-            log_info(loggerStorage, "## Hard Link Eliminado - %s:%s - Lógico %d -> Físico %d", nombreArch, nombreTag, i, bloque_fisico);
+            achicarArchivo(meta, tag->pathTag, ancho, i, bloque_fisico);
+            log_info(loggerStorage, "##<QUERY_ID> - %s>:%s Se eliminó el hard link del bloque lógico %06d al bloque físico %d", nombreArch, nombreTag, i, bloque_fisico);
         }
     }
 
     meta->tamanio = nuevoTamanio;
     guardar_metadata(meta, nombreArch, nombreTag);
-    log_info(loggerStorage, "## File Truncado %s:%s - Tamaño: %d", nombreArch, nombreTag, nuevoTamanio);
+    log_info(loggerStorage, "##<QUERY_ID> - File Truncado %s:%s - Tamaño: %d", nombreArch, nombreTag, nuevoTamanio);
     destruir_metadata(meta);
     return true;
 }
@@ -589,6 +586,7 @@ t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
 }*/
 
 //elimina su ultimo bloq_log
+/*
 void eliminar_bloq_log(t_tag *tag){
     if(list_size(tag->logBlocks) > 0){
     int nroBloqLog = (list_size(tag->logBlocks) - 1); //representa el ultimo bloque logico
@@ -603,7 +601,7 @@ void eliminar_bloq_log(t_tag *tag){
         log_info(loggerStorage,"No hay bloque logico que eliminar");
     }
 }
-
+*/
 /*void crear_bloq_log(t_tag *tag,char *bloq_fis){
     int nroBloqLog = list_size(tag->logBlocks); //representa el siguiente bloque logico a crear
     char *pathBlockLog  = buscar_bloq_logico(tag, nroBloqLog);
