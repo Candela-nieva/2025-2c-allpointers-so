@@ -93,7 +93,6 @@ char *buscar_bloque_fisico(int nroBloque);
 void marcar_libre_en_bitmap(int nro_fisico);
 //==========FORMATO DE ENTRADAS==========
 int calcularAncho();
-
 //==========OPERACIONES==========
 bool op_create(char *nombreArch, char *nombreTag);
 bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio);
@@ -112,7 +111,5 @@ char *path_Metadata(char *nombreArch, char *nombreTag);
 char *buscar_bloq_logico(t_tag *tag, int nroBloqLog);
 char* crear_bloq_log(char* pathTag, t_metadata *meta,int nro);
 void eliminar_bloq_log (char* pathTag, int nro);
-
-
 
 #endif
