@@ -110,4 +110,7 @@ void eliminar_bloq_log(t_tag *tag);
 char *buscar_bloq_logico(t_tag *tag, int nroBloqLog);
 char* crear_bloq_log(t_tag *tag, t_metadata *meta,int nro);
 
+void agrandar_tamanio(t_tag *tag,t_metadata *meta, int bloques_nuevos, int bloques_actuales);
+
+
 #endif

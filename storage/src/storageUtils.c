@@ -360,6 +360,22 @@ char* crear_bloq_log(t_tag *tag, t_metadata *meta,int nro){
     return path_logical;
 }
 
+void agrandar_tamanio(t_tag *tag,t_metadata *meta, int bloques_nuevos, int bloques_actuales){
+    char *path_block0 = buscar_bloque_fisico(0);
+    for (int i = bloques_actuales; i < bloques_nuevos; i++) {
+        char *path_logical = crear_bloq_log(tag,meta,i);
+        if (link(path_block0, path_logical) == -1) {
+            log_error(loggerStorage, "Link a block0 falló: %s", strerror(errno));
+            destruir_metadata(meta);
+            //return false;
+        }    
+        //ARREGLAR EL TEMA DE LOS COMENTARIOS
+        log_info(loggerStorage, "## Hard Link Agregado - Lógico %d -> Físico 0", i);
+        free(path_logical);
+        }
+    free(path_block0);
+}
+
 bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
     t_metadata* meta = leer_metadata(nombreArch, nombreTag);
     if (!meta) return false;
@@ -376,7 +392,8 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
     int ancho = calcularAncho();
 
     if (bloques_nuevos > bloques_actuales) {
-        char *path_block0 = buscar_bloque_fisico(0);
+        agrandar_tamanio(tag,meta,bloques_nuevos,bloques_actuales);
+        /*char *path_block0 = buscar_bloque_fisico(0);
         for (int i = bloques_actuales; i < bloques_nuevos; i++) {
             char *path_logical = crear_bloq_log(tag,meta,i);
             if (link(path_block0, path_logical) == -1) {
@@ -388,7 +405,7 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
             log_info(loggerStorage, "## Hard Link Agregado - %s:%s - Lógico %d -> Físico 0", nombreArch, nombreTag, i);
             free(path_logical);
         }
-        free(path_block0);
+        free(path_block0);*/
     } else if (bloques_nuevos < bloques_actuales) {
         for (int i = bloques_actuales - 1; i >= bloques_nuevos; i--) {
             int* pbloqfis = list_get(meta->blocks, i);
