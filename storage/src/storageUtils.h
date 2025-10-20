@@ -53,7 +53,7 @@ typedef struct {
     int tamanio;
     t_list* blocks;  // lista de bloques (enteros)
     char* estado;    // "WIP" o "COMMIT"
-} metadata_t;
+} t_metadata;
 
 extern t_log* loggerStorage;
 extern t_config* config;
@@ -90,26 +90,24 @@ void initialFile();
 //==========BITMAP==========
 int buscar_bloque_libre();
 char *buscar_bloque_fisico(int nroBloque);
+void marcar_libre_en_bitmap(int nro_fisico);
 //==========FORMATO DE ENTRADAS==========
 int calcularAncho();
 
 //==========OPERACIONES==========
 bool op_create(char *nombreArch, char *nombreTag);
-bool op_trunc(char *nombreArch, char *nombreTag, int size);
+bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio);
 void crear_metadata(char* path, char* nuevoPath);
-
+void destruir_metadata(t_metadata* meta);
+t_metadata* leer_metadata(char* archivo, char* nombreTag);
+void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag);
 //============================= FCB Y TAGS ==================================
 t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag);
 t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionarioTagsArch);
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag);
 char *path_Metadata(char *nombreArch, char *nombreTag);
-void crear_bloq_log(t_tag *tag,char *bloq_fis);
+void eliminar_bloq_log(t_tag *tag);
 char *buscar_bloq_logico(t_tag *tag, int nroBloqLog);
+char* crear_bloq_log(t_tag *tag, t_metadata *meta,int nro);
 
-//=========================== RECIEN SALIDAS DEL HORNO ===========================
-void destruir_metadata(metadata_t* meta);
-bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio);
-void marcar_libre_en_bitmap(int nro_fisico);
-metadata_t* leer_metadata(char* archivo, char* nombreTag);
-void guardar_metadata(metadata_t* meta, char* archivo, char* nombreTag);
 #endif

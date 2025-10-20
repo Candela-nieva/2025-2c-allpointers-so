@@ -130,8 +130,6 @@ void cargar_config_superBlock(){
     
 }
 
-
-
 void freshStart(){
     verificar_freshStart();
     if(fresh_start) {
@@ -234,11 +232,15 @@ char *buscar_bloque_fisico(int nroBloque){
 void crear_physical_blocks() {
     int anchoEntrada = calcularAncho();
     char nombreArch[256];
-    char nroBloque[256];
+    char nroBloque[32];
     for(int i=0; i < cantBloq; i++){
         sprintf(nroBloque,"%0*d", anchoEntrada, i);
         sprintf(nombreArch, "%s/block%s.dat", path_blocks, nroBloque);
         FILE *archBloque = fopen(nombreArch, "w+");
+        if (!archBloque) {
+            log_error(loggerStorage, "Error al crear '%s': %s", nombreArch, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
         ftruncate(fileno(archBloque), tam_bloq);
         if(!archBloque) {
             log_error(loggerStorage, "Error al crear el archivo de bloque '%s' : %s", nombreArch, strerror(errno));
@@ -250,7 +252,7 @@ void crear_physical_blocks() {
 
 void initialFile(){
     op_create("initial_file","BASE");
-    op_trunc("initial_file","BASE",tam_bloq);
+    op_truncate("initial_file","BASE",tam_bloq);
     /*int bloqueInicial = buscar_bloque_libre();
     bitarray_set_bit(bitarray,bloqueInicial);
     char *path_bloq = buscar_bloque_fisico(bloqueInicial);
@@ -308,8 +310,7 @@ bool op_create(char *nombreArch, char *nombreTag){
     return true;
 }
 
-metadata_t* leer_metadata(char* archivo, char* nombreTag) {
-    t_tag *tag = buscar_Tag_Arch(archivo, nombreTag);
+t_metadata* leer_metadata(char* archivo, char* nombreTag) {
     // 1. Armar el path del archivo metadata
     char* path_metadata = path_Metadata(archivo, nombreTag);
 
@@ -321,7 +322,7 @@ metadata_t* leer_metadata(char* archivo, char* nombreTag) {
     }
 
     // 3. Crear estructura para devolver
-    metadata_t* meta = malloc(sizeof(metadata_t));
+    t_metadata* meta = malloc(sizeof(t_metadata));
 
     // 4. Leer el tamaño
     meta->tamanio = config_get_int_value(config, "TAMAÑO");
@@ -334,7 +335,9 @@ metadata_t* leer_metadata(char* archivo, char* nombreTag) {
 
     meta->blocks = list_create();
     for (int i = 0; array_blocks[i] != NULL; i++) {
-        list_add(meta->blocks, (void*) atoi(array_blocks[i]));
+        int* block = malloc(sizeof(int));
+        *block = atoi(array_blocks[i]);
+        list_add(meta->blocks, block);
     }
 
     // 7. Cerrar el config
@@ -343,8 +346,22 @@ metadata_t* leer_metadata(char* archivo, char* nombreTag) {
     return meta;
 }
 
+char* crear_bloq_log(t_tag *tag, t_metadata *meta,int nro){
+    int* cero = malloc(sizeof(int));
+    *cero = 0;
+    list_add(meta->blocks, cero);
+
+    char nombreBloq[32];
+    sprintf(nombreBloq, "%06d.dat", nro);
+
+    char *path_logical = malloc(256);
+    sprintf(path_logical, "%s/logical_blocks/%s", tag->pathTag, nombreBloq);
+
+    return path_logical;
+}
+
 bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
-    metadata_t* meta = leer_metadata(nombreArch, nombreTag);
+    t_metadata* meta = leer_metadata(nombreArch, nombreTag);
     if (!meta) return false;
 
     int bloques_actuales = meta->tamanio / tam_bloq;
@@ -359,28 +376,19 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
     int ancho = calcularAncho();
 
     if (bloques_nuevos > bloques_actuales) {
-        char path_block0[512];
-        sprintf(path_block0, "%s/block%0*d.dat", path_blocks, ancho, 0);
-
+        char *path_block0 = buscar_bloque_fisico(0);
         for (int i = bloques_actuales; i < bloques_nuevos; i++) {
-            // agregar bloque lógico apuntando al bloque físico 0
-            int* cero = malloc(sizeof(int));
-            *cero = 0;
-            list_add(meta->blocks, cero);
-
-            char nro[32];
-            sprintf(nro, "%0*d.dat", ancho, i);
-            char path_logical[256];
-            sprintf(path_logical, "%s/logical_blocks/%s", tag->pathTag, nro);
-            unlink(path_logical);
-
+            char *path_logical = crear_bloq_log(tag,meta,i);
             if (link(path_block0, path_logical) == -1) {
                 log_error(loggerStorage, "Link a block0 falló: %s", strerror(errno));
                 destruir_metadata(meta);
                 return false;
             }
+            
             log_info(loggerStorage, "## Hard Link Agregado - %s:%s - Lógico %d -> Físico 0", nombreArch, nombreTag, i);
+            free(path_logical);
         }
+        free(path_block0);
     } else if (bloques_nuevos < bloques_actuales) {
         for (int i = bloques_actuales - 1; i >= bloques_nuevos; i--) {
             int* pbloqfis = list_get(meta->blocks, i);
@@ -388,13 +396,13 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
 
             // eliminar hardlink lógico, se puede hacer una funcion xq se repite
             char nro[32];
-            sprintf(nro, "%0*d.dat", ancho, i);
+            sprintf(nro, "%06d.dat", i);
             char path_logical[256];
             sprintf(path_logical, "%s/logical_blocks/%s", tag->pathTag, nro);
             unlink(path_logical);
 
             // revisar nlink del físico
-            char path_fisico[256];
+            char path_fisico[512];
             sprintf(path_fisico, "%s/block%0*d.dat", path_blocks, ancho, bloque_fisico);
             
             struct stat st;
@@ -428,7 +436,7 @@ void marcar_libre_en_bitmap(int nro_fisico) {
     log_info(loggerStorage, "## Bloque Físico Liberado - Número de Bloque: %d", nro_fisico);
 }
 
-void guardar_metadata(metadata_t* meta, char* archivo, char* nombreTag) {
+void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag) {
     char* path_meta = path_Metadata(archivo, nombreTag);
 
     // Asegurar que existe el archivo
@@ -475,7 +483,7 @@ void guardar_metadata(metadata_t* meta, char* archivo, char* nombreTag) {
     free(path_meta);
 }
 
-void destruir_metadata(metadata_t* meta) {
+void destruir_metadata(t_metadata* meta) {
     if (!meta)
         return;
     if (meta->estado)
@@ -487,24 +495,6 @@ void destruir_metadata(metadata_t* meta) {
     free(meta);
 }
 
-/*bool op_trunc(char *nombreArch, char *nombreTag, int size){
-    t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
-    if(size > tag->tamanio){
-        int aux = size;
-        while(aux > 0){
-            int bloqueInicial = buscar_bloque_libre();
-            bitarray_set_bit(bitarray,bloqueInicial);
-            list_add(tag->physicalBlocks,bloqueInicial);
-            char *path_bloq = buscar_bloque_fisico(bloqueInicial);
-            crear_bloq_log(tag,path_bloq);
-            aux -= tam_bloq;
-        }
-        return true;
-    }else{
-        return true;
-    }
-}
-*/
 void crear_metadata (char* path, char* nuevoPath) {
     char pathConfig [256];
     sprintf(pathConfig, "%s/metadata.config", path);
@@ -540,7 +530,7 @@ t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
     t_fcb *fcb = malloc(sizeof(t_fcb));
     fcb->nombreArch = nombreNuevoArch;
     fcb->tags = dictionary_create();
-    t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreNuevoArch, fcb->tags);
+    crear_tag(nombreNuevoTag,nombreNuevoArch, fcb->tags);
     dictionary_put(diccionario_archivos,fcb->nombreArch,fcb);
     return fcb;
 }
@@ -581,31 +571,6 @@ t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
     list_add(tag->logBlocks,nroBloqLog);
 }*/
 
-bool op_trunc(char *nombreArch, char *nombreTag, int size){
-    t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
-    int cantBloques = ceil(size / tam_bloq); //cant de celdas a asignar / liberar
-    if(size > tag->tamanio){
-        //int aux = size;
-        while(cantBloques > 0){
-            int bloqueLibre = buscar_bloque_libre();
-            bitarray_set_bit(bitarray,bloqueLibre);
-            list_add(tag->physicalBlocks,bloqueLibre);
-            char *path_bloqLib = buscar_bloque_fisico(bloqueLibre);
-            crear_bloq_log(tag,path_bloqLib);
-            cantBloques--;
-        }
-        tag->tamanio = size;
-        return true;
-    }else{
-        int cantBloquesElim = ceil(tag->tamanio / tam_bloq) - size;
-        while(cantBloquesElim > 0){
-            eliminar_bloq_log(tag);
-            cantBloquesElim--;
-        }
-        tag->tamanio = size;
-        return true;
-    }
-}
 //elimina su ultimo bloq_log
 void eliminar_bloq_log(t_tag *tag){
     if(list_size(tag->logBlocks) > 0){
@@ -622,7 +587,7 @@ void eliminar_bloq_log(t_tag *tag){
     }
 }
 
-void crear_bloq_log(t_tag *tag,char *bloq_fis){
+/*void crear_bloq_log(t_tag *tag,char *bloq_fis){
     int nroBloqLog = list_size(tag->logBlocks); //representa el siguiente bloque logico a crear
     char *pathBlockLog  = buscar_bloq_logico(tag, nroBloqLog);
     log_info(loggerStorage,"Nuevo Bloq Log = %s", pathBlockLog);
@@ -632,7 +597,7 @@ void crear_bloq_log(t_tag *tag,char *bloq_fis){
     fclose(bloqL);
     free(pathBlockLog);
     list_add(tag->logBlocks,nroBloqLog);
-}
+}*/
 
 char *buscar_bloq_logico(t_tag *tag, int nroBloqLog){
     char bloqLog[256];
