@@ -253,6 +253,7 @@ void crear_physical_blocks() {
 void initialFile(){
     op_create("initial_file","BASE");
     op_truncate("initial_file","BASE",tam_bloq);
+    op_tag("initial_file", "BASE", "BASE2");
     /*int bloqueInicial = buscar_bloque_libre();
     bitarray_set_bit(bitarray,bloqueInicial);
     char *path_bloq = buscar_bloque_fisico(bloqueInicial);
@@ -386,10 +387,12 @@ void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bl
     // revisar nlink del físico
     char path_fisico[512];
     sprintf(path_fisico, "%s/block%0*d.dat", path_blocks, ancho, bloque_fisico);
-
+    //stat devuelve las estadisticas de un file mediante el struct st,
+    //siendo st_link la cantidad de hardlinks que lo referencian
+    //si ya se hizo unlink antes, la cantidad de links deberia ser 0
     struct stat st;
     if (stat(path_fisico, &st) == 0) {
-        if (st.st_nlink == 1 && bloque_fisico != 0) {
+        if (st.st_nlink == 0 && bloque_fisico != 0) {
             marcar_libre_en_bitmap(bloque_fisico);
         }
     }
@@ -435,10 +438,46 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
     }
 
     meta->tamanio = nuevoTamanio;
-    guardar_metadata(meta, nombreArch, nombreTag);
+    //guardar_metadata(meta, nombreArch, nombreTag);
+    //esto se tiene que hacer recien en commit
     log_info(loggerStorage, "##<QUERY_ID> - File Truncado %s:%s - Tamaño: %d", nombreArch, nombreTag, nuevoTamanio);
     destruir_metadata(meta);
     return true;
+}
+//cp [source] [destination]: Copy files or directories. podemos usar la funcion system para correr este comando
+bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag){
+    t_tag *tagOrigen = buscar_Tag_Arch(nombreArch,nombreTagOrigen);
+    if(tagOrigen){
+        char pathArch[256];
+        sprintf(pathArch,"%s/%s/%s",path_files,nombreArch,nombreNuevoTag);
+        log_info(loggerStorage, "nuevo path : %s",pathArch);
+        char cmd[256];
+        sprintf(cmd,"cp -r %s %s",tagOrigen->pathTag,pathArch);
+        log_info(loggerStorage, "comando : %s",cmd);
+        system(cmd);
+        crear_copia_tag(nombreArch,tagOrigen,nombreNuevoTag);
+        return true;
+    }
+    return false;
+}
+
+void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
+    t_fcb *arch = dictionary_get(diccionario_archivos,nombreArch);
+    t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreArch,arch->tags);
+    log_info(loggerStorage, "NUEVO TAG");
+    //REVISAR ESTRUCTURAS ADMINISTRATIVAS PARA TAG Y METADATA
+    //nuevoTag->tamanio = tagOrigen->tamanio;
+    //nuevoTag->estado = WIP;
+    log_info(loggerStorage, "A LEER META");
+    t_metadata *meta = leer_metadata(nombreArch, nombreNuevoTag);
+
+    meta->estado = WIP;
+    log_info(loggerStorage, "META LEIDA");
+    //GUARDAR METADATA NO FUNCO
+    //guardar_metadata(meta, nombreArch, nombreNuevoTag);
+    log_info(loggerStorage, "META ACTUALIZADA");
+    destruir_metadata(meta);
+    log_info(loggerStorage, "META DESTRUIDA");
 }
 
 void marcar_libre_en_bitmap(int nro_fisico) {

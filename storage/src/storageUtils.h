@@ -98,6 +98,7 @@ bool op_create(char *nombreArch, char *nombreTag);
 bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio);
 void crear_metadata(char* path, char* nuevoPath);
 void destruir_metadata(t_metadata* meta);
+bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag);
 t_metadata* leer_metadata(char* archivo, char* nombreTag);
 void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag);
 bool agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0);
@@ -111,5 +112,5 @@ char *path_Metadata(char *nombreArch, char *nombreTag);
 char *buscar_bloq_logico(t_tag *tag, int nroBloqLog);
 char* crear_bloq_log(char* pathTag, t_metadata *meta,int nro);
 void eliminar_bloq_log (char* pathTag, int nro);
-
+void crear_copia_tag(char* nombreArch, t_tag *tagOrigen, char *nombreNuevoTag);
 #endif
