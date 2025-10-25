@@ -464,17 +464,14 @@ bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag){
 void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     t_fcb *arch = dictionary_get(diccionario_archivos,nombreArch);
     t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreArch,arch->tags);
-    log_info(loggerStorage, "NUEVO TAG");
     //REVISAR ESTRUCTURAS ADMINISTRATIVAS PARA TAG Y METADATA
     //nuevoTag->tamanio = tagOrigen->tamanio;
     //nuevoTag->estado = WIP;
-    log_info(loggerStorage, "A LEER META");
     t_metadata *meta = leer_metadata(nombreArch, nombreNuevoTag);
 
-    meta->estado = WIP;
-    log_info(loggerStorage, "META LEIDA");
+    meta->estado = WORK_IN_PROGRESS;
     //GUARDAR METADATA NO FUNCO
-    //guardar_metadata(meta, nombreArch, nombreNuevoTag);
+    guardar_metadata(meta, nombreArch, nombreNuevoTag);
     log_info(loggerStorage, "META ACTUALIZADA");
     destruir_metadata(meta);
     log_info(loggerStorage, "META DESTRUIDA");
@@ -491,13 +488,13 @@ void marcar_libre_en_bitmap(int nro_fisico) {
 
 void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag) {
     char* path_meta = path_Metadata(archivo, nombreTag);
-
+    log_info(loggerStorage, "Abriendo path meta: %s", path_meta);
     // Asegurar que existe el archivo
-    FILE* f = fopen(path_meta, "r");
+    /*FILE* f = fopen(path_meta, "r");
     if (!f)
         f = fopen(path_meta, "w");
     if (f)
-        fclose(f);
+        fclose(f);*/
 
     t_config* config = config_create(path_meta);
     if (!config) {
@@ -509,10 +506,19 @@ void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag) {
     // TAMAÑO
     char tamanio_str[32];
     sprintf(tamanio_str, "%d", meta->tamanio);
+    log_info(loggerStorage, "seteando tamanio: %s", tamanio_str);
     config_set_value(config, "TAMAÑO", tamanio_str);
-
+    log_info(loggerStorage, "tamanio seteado");
     // ESTADO
-    config_set_value(config, "ESTADO", meta->estado);
+    char estado_str[128];
+    if(meta->estado == COMMITED){
+        sprintf(estado_str, "COMMITED");
+    }else{
+        sprintf(estado_str, "WORK_IN_PROGRESS");
+    }
+    log_info(loggerStorage, "seteando ESTADO: %s",estado_str);
+    config_set_value(config, "ESTADO", estado_str);
+    log_info(loggerStorage, "Estado seteado");
 
     // BLOCKS
     // Construir string tipo [17,2,5]
@@ -598,7 +604,7 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
     tag->tamanio = 0;
     tag->physicalBlocks = list_create();
     tag->logBlocks = list_create();
-    tag->estado = WIP;
+    tag->estado = WORK_IN_PROGRESS;
     dictionary_put(diccionarioTagsArch, tag->nombreTag, tag);
     return tag;
 }

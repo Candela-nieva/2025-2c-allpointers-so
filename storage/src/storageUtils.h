@@ -30,8 +30,8 @@ typedef struct {
 } t_config_superblock;
 
 typedef enum {
-    WIP,
-    COMMIT
+    WORK_IN_PROGRESS,
+    COMMITED
 }t_estadoTag;
 
 typedef struct {
