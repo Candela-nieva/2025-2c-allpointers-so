@@ -22,6 +22,18 @@ typedef struct {
     char* log_level;
 } t_config_worker;
 
+typedef enum {
+    CREATE,
+    TRUNCATE,
+    WRITE,
+    READ,
+    TAG,
+    COMMIT,
+    FLUSH,
+    DELETE,
+    END,
+    DESCONOCIDA // Para cualquier instrucción no reconocida
+} tipo_instruccion;
 
 // ============== Memoria Interna ================
 typedef struct {
@@ -60,6 +72,8 @@ void* iniciar_conexion_storage(void* arg);
 void *manejar_ejecutar(void* buffer);
 void* iniciar_conexion_master(void* arg);
 static void trim_newline(char* s);
-static void ejecutar_instruccion(const char* instruccion, int qid, int pc);
+static bool ejecutar_instruccion(const char* instruccion, int qid, int pc);
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
+tipo_instruccion obtener_instruccion(const char* op);
+static void notificar_fin_query_a_master(int qid, const char* motivo);
 #endif

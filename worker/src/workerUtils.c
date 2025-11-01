@@ -156,11 +156,12 @@ void esperar_queries(){
                 log_info(loggerWorker, "Se recibio la operacion EJECUTAR");
                 break;
             //NUEVO!!!!!
-            case DESALOJO :
+            case DESALOJO: // Debido al algoritmo utilizado en el Master
                 log_info(loggerWorker, "Master ha indicado DESALOJO de Query actual.");
                 atomic_store(&hay_interrupt,1);
                 break;
 
+            // ESTO NO SE SI VA ACA!! por ahora queda acá, pero no tiene mucho sentido, en qué casos recibiriamos esto(?)    
             case FIN_QUERY: // Master avisa que NO hay mas queries para que este worker ejecute
                 log_info(loggerWorker, "Master ha indicado FIN_QUERY. Finalizando espera de queries.");
                 return; // Salir de la función para finalizar la espera de queries
@@ -225,17 +226,198 @@ void* manejar_ejecutar(void *buffer) {
 
 //////////////////////////////// query interpreter ////////////////////////////
 
-// Limpia las líneas leídas de archivos para que no tengan saltos de línea al final, 
-// y así procesarlas correctamente en el query interpreter.
-static void trim_newline(char* s) {
-    if(!s) return;
-    size_t len = strlen(s);
-    while(len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) {
-        s[len - 1] = '\0';
-        len--;
+// Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
+void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
+    
+    if(!archivo_relativo) {
+        log_info(loggerWorker, "Error: Ruta de archivo de Query %d no proporcionada.", qid);
+        return;
     }
+    
+    // Construir la ruta completa al archivo de query (PATH_SCRIPTS + "/" + archivo_relativo)
+    char ruta_completa[1024];
+    if (config_struct && config_struct->path_scripts) {
+        snprintf(ruta_completa, sizeof(ruta_completa), "%s/%s", config_struct->path_scripts, archivo_relativo);
+    } else {
+        // fallback: usar archivo_relativo tal cual
+        strncpy(ruta_completa, archivo_relativo, sizeof(ruta_completa)-1);
+        ruta_completa[sizeof(ruta_completa)-1] = '\0';
+    }
+
+    FILE *file = fopen(ruta_completa, "r");
+    if(!file){
+        log_info(loggerWorker, "Query %d: Error al abrir el archivo de Query: %s", qid, ruta_completa);
+        return;
+    }
+    
+    char linea[2048];
+    int pc = 0;
+    // Saltar hasta pc_inicial
+    while (fgets(linea, sizeof(linea), file) != NULL) {
+        if (pc < pc_inicial) {
+            ++pc;
+            continue;
+        }
+
+        trim_newline(linea);
+
+        // LOG OBLIGATORIO
+        log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea);
+        //Fetch Instrucción: “## Query <QUERY_ID>: FETCH - Program Counter: <PROGRAM_COUNTER> - <INSTRUCCIÓN>3”. 
+        
+        // Ejecutar la instrucción
+        //ejecutar_instruccion(linea, qid, pc);
+
+        // Dentro de ejecutar_query
+        bool es_end = ejecutar_instruccion(linea, qid, pc);
+        
+        if (es_end) {
+        notificar_fin_query_a_master(qid, "OK");
+            break; // Si fue 'END', rompemos el bucle
+}
+        
+        // Retardo simulado
+        if (retardo_memoria > 0) { // retardoo segun instruc
+            usleep((useconds_t)retardo_memoria * 1000);
+        }
+
+        ++pc;
+
+        // Comprobar interrupción (desalojo)
+        if (atomic_load(&hay_interrupt) == 1) {
+            atomic_store(&hay_interrupt, 0);
+            t_paquete *paquete = crear_paquete(PC_ACTUALIZADO);
+            agregar_a_paquete(paquete, &pc, sizeof(int));
+            enviar_paquete(paquete, socket_master);
+            eliminar_paquete(paquete);
+            log_info(loggerWorker, "PC %d enviado a master tras desalojo.", pc);
+            fclose(file);
+            return;
+        }
+
+        // Si era END terminamos la Query
+        if (strncmp(linea, "END", 3) == 0) {
+            log_info(loggerWorker, "##Query %d: Query finalizada (END)", qid);
+            fclose(file);
+            return;
+        }
+    }
+
+    log_info(loggerWorker, "##Query %d: Fin de archivo alcanzado (EOF).", qid);
+    fclose(file);
 }
 
+
+//revisar si la vamos a necesitar
+/*static void notificar_fin_query(int qid, const char* motivo) { 
+    t_paquete* p = crear_paquete(WORKER_TO_MASTER_END);
+    agregar_a_paquete(&qid, sizeof(int));
+    agregar_a_paquete_string(p, motivo, 0);
+    enviar_paquete(p, socket_master);
+    eliminar_paquete(p);
+}*/
+//prueba
+
+// (Asegúrate de tener esta función en alguna parte, como discutimos antes)
+static void notificar_fin_query_a_master(int qid, const char* motivo) { 
+    t_paquete* p = crear_paquete(WORKER_TO_MASTER_END); // (Necesitas este op_code en protocolo.h)
+    agregar_a_paquete(p, &qid, sizeof(int));
+    agregar_a_paquete_string(p, (char*)motivo, strlen(motivo));
+    enviar_paquete(p, socket_master);
+    eliminar_paquete(p);
+}
+
+
+// Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
+void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
+    
+    if(!archivo_relativo) {
+        log_info(loggerWorker, "Error: Ruta de archivo de Query %d no proporcionada.", qid);
+        return;
+    }
+    
+    //Construir la ruta completa al archivo de query (PATH_SCRIPTS + "/" + archivo_relativo)
+    char ruta_completa[1024];
+    if (config_struct && config_struct->path_scripts) {
+        snprintf(ruta_completa, sizeof(ruta_completa), "%s/%s", config_struct->path_scripts, archivo_relativo);
+    } else {
+        // fallback: usar archivo_relativo tal cual
+        strncpy(ruta_completa, archivo_relativo, sizeof(ruta_completa)-1);
+        ruta_completa[sizeof(ruta_completa)-1] = '\0';
+    }
+
+    FILE *file = fopen(ruta_completa, "r");
+    if(!file){
+        log_info(loggerWorker, "Query %d: Error al abrir el archivo de Query: %s", qid, ruta_completa);
+        return;
+    }
+    
+    char linea[2048];
+    int pc = 0;
+    
+    // 1. Bucle para saltar hasta pc_inicial (para reanudar queries)
+    // Si pc_inicial = 5, este bucle se ejecuta 5 veces (pc = 0, 1, 2, 3, 4)
+    while (pc < pc_inicial) {
+        if (fgets(linea, sizeof(linea), file) == NULL) {
+            // El PC está fuera de los límites del archivo
+            log_info(loggerWorker, "Query %d: PC %d fuera de rango (EOF).", qid, pc_inicial);
+            notificar_fin_query_a_master(qid, "EOF");
+            fclose(file);
+            return;
+        }
+        pc++;
+    }
+
+    // 2. Bucle principal de ejecución
+    // Leemos la primera línea a ejecutar (la que corresponde a pc_inicial)
+    while (fgets(linea, sizeof(linea), file) != NULL) {
+        
+        trim_newline(linea);
+
+        log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea);
+        
+        bool es_end = ejecutar_instruccion(linea, qid, pc);
+        
+        if (es_end) {
+            log_info(loggerWorker, "##Query %d: Query finalizada (END)", qid);
+            notificar_fin_query_a_master(qid, "OK");
+            break; // Salir del bucle while
+        }
+        
+        // El retardo ahora debe estar DENTRO de 'ejecutar_instruccion',
+        // solo en los casos READ y WRITE.
+        
+        // Comprobar interrupción (desalojo)
+        if (atomic_load(&hay_interrupt) == 1) {
+            atomic_store(&hay_interrupt, 0);
+            
+    
+            int pc_siguiente = pc + 1;
+            
+            t_paquete *paquete = crear_paquete(PC_ACTUALIZADO);
+            agregar_a_paquete(paquete, &pc_siguiente, sizeof(int)); 
+            enviar_paquete(paquete, socket_master);
+            eliminar_paquete(paquete);
+            
+            log_info(loggerWorker, "## Query %d: Desalojada por pedido del Master. PC guardado: %d", qid, pc_siguiente);
+            fclose(file);
+            return; // Salir de la función (el hilo muere)
+        }
+
+        pc++; // Avanzar al siguiente Program Counter
+    
+    }
+
+    // Si salimos del bucle y no fue por 'END' (es_end=false), fue por Fin de Archivo (EOF)
+    if (!es_end) {
+        log_info(loggerWorker, "##Query %d: Fin de archivo alcanzado (EOF).", qid);
+        notificar_fin_query_a_master(qid, "EOF");
+    }
+    
+    fclose(file);
+}
+
+/*  REICHEL TDV NO LO QUIERE BORRAR
 // Parsea y ejecuta una instrucción individual
 static void ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     if(!instruccion) return;
@@ -311,21 +493,151 @@ static void ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     free(copia);
 
 }
+    
+*/
 
+// Limpia las líneas leídas de archivos para que no tengan saltos de línea al final, 
+// y así procesarlas correctamente en el query interpreter.
+static void trim_newline(char* s) {
+    if(!s) return;
+    size_t len = strlen(s);
+    while(len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) {
+        s[len - 1] = '\0';
+        len--;
+    }
+}
+// Para mapear las i
+tipo_instruccion obtener_instruccion(const char* op) {
+    if (strcmp(op, "CREATE") == 0) return CREATE;
+    if (strcmp(op, "TRUNCATE") == 0) return TRUNCATE;
+    if (strcmp(op, "WRITE") == 0) return WRITE;
+    if (strcmp(op, "READ") == 0) return READ;
+    if (strcmp(op, "TAG") == 0) return TAG;
+    if (strcmp(op, "COMMIT") == 0) return COMMIT;
+    if (strcmp(op, "FLUSH") == 0) return FLUSH;
+    if (strcmp(op, "DELETE") == 0) return DELETE;
+    if (strcmp(op, "END") == 0) return END;
+    return DESCONOCIDA,
+}
+
+//Devuelve 'true' si la instrucción fue END, 'false' en cualquier otro caso.
+static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
+    if(!instruccion) return false;
+    
+    char* copia = strdup(instruccion);
+    trim_newline(copia);
+
+    char* op = strtok(copia, " ");     
+    if(!op) {
+        log_info(loggerWorker, "Query %d: - Instrucción vacía en PC=%d", qid, pc);
+        free(copia);
+        return false;
+    }
+
+    // Guardamos la operación para el log obligatorio
+    char instruccion_log[256];
+    strncpy(instruccion_log, op, 255);
+
+    bool fue_end = false;
+    
+    tipo_instruccion inst_type = obtener_instruccion(op);
+
+    // 2. Usamos el enum en el switch
+    switch (inst_type) {
+        case CREATE: {
+            char* file_tag = strtok(NULL, " ");
+            ejecutar_create(file_tag, qid);
+            break;
+        }
+        case TRUNCATE: {
+            char* file_tag = strtok(NULL, " ");
+            char* tam_str = strtok(NULL, " ");
+            int nuevo_tam = (tam_str != NULL) ? atoi(tam_str) : 0;
+            ejecutar_truncate(file_tag, nuevo_tam, qid);
+            break;
+        }
+        case WRITE: {
+            char* file_tag = strtok(NULL, " ");
+            char* dir_str = strtok(NULL, " ");
+            char* contenido = strtok(NULL, ""); // El resto de la línea
+            int direccion = (dir_str != NULL) ? atoi(dir_str) : 0;
+
+            // RETARDO_MEMORIA: Solo se aplica en READ y WRITE
+            usleep((useconds_t)retardo_memoria * 1000);
+            //ejecutar_write(file_tag, direccion, contenido, qid); descomentar cuando esten en funcionamiento las mismas
+            break;
+        }
+        case READ: {
+            char* file_tag = strtok(NULL, " ");
+            char* dir_str = strtok(NULL, " ");
+            char* tam_str = strtok(NULL, " ");
+            int direccion = (dir_str != NULL) ? atoi(dir_str) : 0;
+            int tam = (tam_str != NULL) ? atoi(tam_str) : 0;
+
+            // RETARDO_MEMORIA: Solo se aplica en READ y WRITE
+            usleep((useconds_t)retardo_memoria * 1000);
+            //ejecutar_read(file_tag, direccion, tam, qid);
+            break;
+        }
+        case TAG: {
+            char* origen = strtok(NULL, " ");
+            char* destino = strtok(NULL, ""); // El resto
+            //ejecutar_tag(origen, destino, qid);
+            break;
+        }
+        case COMMIT: {
+            char* file_tag = strtok(NULL, " ");
+            //ejecutar_commit(file_tag, qid);
+            break;
+        }
+        case FLUSH: {
+            char* file_tag = strtok(NULL, " ");
+            //ejecutar_flush(file_tag, qid);
+            break;
+        }
+        case DELETE: {
+            char* file_tag = strtok(NULL, " ");
+            //ejecutar_delete(file_tag, qid);
+            break;
+        }
+        case END: {
+            fue_end = true;
+            break;
+        }
+        case DESCONOCIDA:
+        default: {
+            log_error(loggerWorker, "Query %d: - Instrucción desconocida: %s", qid, instruccion);
+            // NOTA: Una instrucción desconocida podría ser un error fatal que termine la query.
+            // notificar_fin_query_a_master(qid, "ERROR_INSTRUCCION_DESCONOCIDA");
+            // fue_end = true; // Para que el bucle pare
+            break;
+        }
+    }
+
+    // LOG OBLIGATORIO: Instrucción realizada
+    log_info(loggerWorker, "## Query %d: Instrucción realizada: %s", qid, instruccion_log);
+
+    free(copia);
+    return fue_end;
+}
 
 // ==== Funciones de ejecucion de instrucciones ====
-
-void ejecutar_create(char* tag) {
+void ejecutar_create(char* file_tag){
     t_paquete* paquete = crear_paquete(CREATE);
-    int tam = strlen(tag) + 1;
-    agregar_a_paquete(paquete, tag, tam);
-    enviar_paquete(paquete, socket_storage);  // se envia a Storage
+    int tam = strlen(file_tag) + 1;
+    agregar_a_paquete(paquete, file_tag, tam);
+    int tamanio = 0;
+    agregar_a_paquete(paquete, &tamanio, sizeof(int));
+
+    enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
-
-    log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", tag); // LOG NO OBLIGATORIO
-
-    // Ojo que es con tamaño 0 el nuevo archivo
+    log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", file_tag);
 }
+
+// Comentario dantesco: Tienen dos definiciones de la funcion ejecutar_create
+// Fijense que este es el correcto, pero envien el tamanio antes.
+// Existe la funcion de agregar a paquete un string tmb!! En protocolo
+
 
 void ejecutar_truncate(char* tag, int nuevo_tam) {
     log_info(loggerWorker, "TRUNCATE solicitad en tag: %s, nuevo tamaño: %d", tag, nuevo_tam); // LOG NO OBLIGATORIO
@@ -361,105 +673,7 @@ void ejecutar_write(char* tag, int direccion, char* contenido) {
 // deberá esperar un tiempo definido por archivo de configuración (RETARDO_MEMORIA). 
 
 
-// Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
-void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
-    
-    if(!archivo_relativo) {
-        log_info(loggerWorker, "Error: Ruta de archivo de Query %d no proporcionada.", qid);
-        return;
-    }
-    
-    // Construir la ruta completa al archivo de query (PATH_SCRIPTS + "/" + archivo_relativo)
-    char ruta_completa[1024];
-    if (config_struct && config_struct->path_scripts) {
-        snprintf(ruta_completa, sizeof(ruta_completa), "%s/%s", config_struct->path_scripts, archivo_relativo);
-    } else {
-        // fallback: usar archivo_relativo tal cual
-        strncpy(ruta_completa, archivo_relativo, sizeof(ruta_completa)-1);
-        ruta_completa[sizeof(ruta_completa)-1] = '\0';
-    }
 
-    FILE *file = fopen(ruta_completa, "r");
-    if(!file){
-        log_info(loggerWorker, "Query %d: Error al abrir el archivo de Query: %s", qid, ruta_completa);
-        return;
-    }
-    
-    char linea[2048];
-    int pc = 0;
-    // Saltar hasta pc_inicial
-    while (fgets(linea, sizeof(linea), file) != NULL) {
-        if (pc < pc_inicial) {
-            ++pc;
-            continue;
-        }
-
-        trim_newline(linea);
-
-        // LOG OBLIGATORIO
-        log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea);
-        //Fetch Instrucción: “## Query <QUERY_ID>: FETCH - Program Counter: <PROGRAM_COUNTER> - <INSTRUCCIÓN>3”. 
-        
-        // Ejecutar la instrucción
-        ejecutar_instruccion(linea, qid, pc);
-        
-        // Retardo simulado
-        if (retardo_memoria > 0) { // retardoo segun instruc
-            usleep((useconds_t)retardo_memoria * 1000);
-        }
-
-        ++pc;
-
-        // Comprobar interrupción (desalojo)
-        if (atomic_load(&hay_interrupt) == 1) {
-            atomic_store(&hay_interrupt, 0);
-            t_paquete *paquete = crear_paquete(PC_ACTUALIZADO);
-            agregar_a_paquete(paquete, &pc, sizeof(int));
-            enviar_paquete(paquete, socket_master);
-            eliminar_paquete(paquete);
-            log_info(loggerWorker, "PC %d enviado a master tras desalojo.", pc);
-            fclose(file);
-            return;
-        }
-
-        // Si era END terminamos la Query
-        if (strncmp(linea, "END", 3) == 0) {
-            log_info(loggerWorker, "##Query %d: Query finalizada (END)", qid);
-            fclose(file);
-            return;
-        }
-    }
-
-    log_info(loggerWorker, "##Query %d: Fin de archivo alcanzado (EOF).", qid);
-    fclose(file);
-}
-
-// ==== Funciones de ejecucion de instrucciones ====
-void ejecutar_create(char* file_tag){
-    t_paquete* paquete = crear_paquete(CREATE);
-    int tam = strlen(file_tag) + 1;
-    agregar_a_paquete(paquete, file_tag, tam);
-    int tamanio = 0;
-    agregar_a_paquete(paquete, &tamanio, sizeof(int));
-
-    enviar_paquete(paquete, socket_storage);
-    eliminar_paquete(paquete);
-    log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", file_tag);
-}
-
-// Comentario dantesco: Tienen dos definiciones de la funcion ejecutar_create
-// Fijense que este es el correcto, pero envien el tamanio antes.
-// Existe la funcion de agregar a paquete un string tmb!! En protocolo
-
-//revisar si la vamos a necesitar
-/*static void notificar_fin_query(int qid, const char* motivo) { 
-    t_paquete* p = crear_paquete(WORKER_TO_MASTER_END);
-    agregar_a_paquete(&qid, sizeof(int));
-    agregar_a_paquete_string(p, motivo, 0);
-    enviar_paquete(p, socket_master);
-    eliminar_paquete(p);
-}*/
-//prueba
 
 // =================== CONEXION A STORAGE ======================= 
 // 1ero) Iniciar conexion a storage
@@ -489,8 +703,8 @@ void* iniciar_conexion_storage(void* arg){
         close(socket_storage);
         return NULL;
     }
-//hola jaja
-// tuve que cambiar los loggers de cargar_config de qc y worker a fprintfs solo para testeo por ahora, estabamos usando loggers antes de seren creados 
+  //hola jaja
+ // tuve que cambiar los loggers de cargar_config de qc y worker a fprintfs solo para testeo por ahora, estabamos usando loggers antes de seren creados 
     
     // TAMAÑO BLOQUE = TAMAÑO PAGINA
     //int tamanio_pag = 0; // ahora es global pq necesitabamos usarla en otras funciones (AHORA ES tamanio_bloque_storage)
@@ -525,7 +739,7 @@ void inicializar_memoria_interna() {
     memoria.tamanio_bloque = tamanio_bloque_storage;
     memoria.tamanio_total = tam_memoria;
     memoria.cant_bloques = memoria.tamanio_total / memoria.tamanio_bloque;
-    memoria.bloques = calloc(memoria.cant_bloques, sizeof(t_bloque_memoria));
+    memoria.bloques = calloc(memoria.cant_bloques, sizeof(t_bloque_memoria)); 
     memoria.puntero_clock = 0;
     strcpy(memoria.algoritmo, config_struct->algoritmo_reemplazo);
     pthread_mutex_init(&memoria.mutex, NULL);
@@ -540,6 +754,34 @@ void inicializar_memoria_interna() {
     log_info(loggerWorker, "Memoria Interna inicializada (%d bloques de %d bytes)",
             memoria.cant_bloques, memoria.tamanio_bloque);    
 } 
+
+// Para liberar la memoria interna
+void liberar_memoria_interna() {
+    if(memoria.bloques == NULL) {
+        log_info(loggerWorker, "No hay bloques en memoria para liberar");
+        return;
+    }
+
+    pthread_mutex_lock(&memoria.mutex);
+
+    // Libero cada bloque
+    for(int i = 0; i < memoria.cant_bloques; i++) {
+        if (memoria.bloques[i].datos != NULL) {
+            free(memoria.bloques[i].datos);
+            memoria.bloques[i].datos = NULL;
+        }
+    }
+
+    // Libero el array de bloques
+    free(memoria.bloques);
+    memoria.bloques = NULL;
+
+    pthread_mutex_unlock(&memoria.mutex);
+    pthread_mutex_destroy(&memoria.mutex);
+
+    log_info(loggerWorker, "Memoria Interna liberada correctamente.");
+}
+
 
 // Funciones base
 
