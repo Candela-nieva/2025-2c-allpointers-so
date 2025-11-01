@@ -9,6 +9,8 @@
 #include <commons/log.h>
 #include <commons/config.h>
 #include <stdatomic.h>
+#include <stdbool.h>
+
 typedef struct {
     char* modulo;
     char* ip_master;
@@ -67,7 +69,7 @@ void inicializar_config(void);
 void crear_logger ();
 void cargar_config ();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
-void esperar_queries()
+void esperar_queries();
 void* iniciar_conexion_storage(void* arg);
 void *manejar_ejecutar(void* buffer);
 void* iniciar_conexion_master(void* arg);

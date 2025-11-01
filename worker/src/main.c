@@ -18,6 +18,8 @@ int main(int argc, char* argv[]) {
 
     int* id = malloc(sizeof(int));
     *id = worker_id;
+
+    // creo que no se libera el espacio pedido para el id de worker ¿?
     
     pthread_t hilo_storage, hilo_master;
     pthread_create(&hilo_storage, NULL, iniciar_conexion_storage, NULL);

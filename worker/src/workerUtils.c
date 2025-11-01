@@ -227,6 +227,7 @@ void* manejar_ejecutar(void *buffer) {
 //////////////////////////////// query interpreter ////////////////////////////
 
 // Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
+/*
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     
     if(!archivo_relativo) {
@@ -306,6 +307,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     log_info(loggerWorker, "##Query %d: Fin de archivo alcanzado (EOF).", qid);
     fclose(file);
 }
+*/
 
 
 //revisar si la vamos a necesitar
@@ -317,6 +319,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     eliminar_paquete(p);
 }*/
 //prueba
+
 
 // (Asegúrate de tener esta función en alguna parte, como discutimos antes)
 static void notificar_fin_query_a_master(int qid, const char* motivo) { 
@@ -331,6 +334,8 @@ static void notificar_fin_query_a_master(int qid, const char* motivo) {
 // Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     
+    bool es_end =false;
+
     if(!archivo_relativo) {
         log_info(loggerWorker, "Error: Ruta de archivo de Query %d no proporcionada.", qid);
         return;
@@ -376,7 +381,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
 
         log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea);
         
-        bool es_end = ejecutar_instruccion(linea, qid, pc);
+        es_end = ejecutar_instruccion(linea, qid, pc);
         
         if (es_end) {
             log_info(loggerWorker, "##Query %d: Query finalizada (END)", qid);
@@ -495,6 +500,17 @@ static void ejecutar_instruccion(const char* instruccion, int qid, int pc) {
 }
     
 */
+void ejecutar_create(char* file_tag){
+    t_paquete* paquete = crear_paquete(CREATE);
+    int tam = strlen(file_tag) + 1;
+    agregar_a_paquete(paquete, file_tag, tam);
+    int tamanio = 0;
+    agregar_a_paquete(paquete, &tamanio, sizeof(int));
+
+    enviar_paquete(paquete, socket_storage);
+    eliminar_paquete(paquete);
+    log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", file_tag);
+}
 
 // Limpia las líneas leídas de archivos para que no tengan saltos de línea al final, 
 // y así procesarlas correctamente en el query interpreter.
@@ -506,7 +522,7 @@ static void trim_newline(char* s) {
         len--;
     }
 }
-// Para mapear las i
+// Para mapear las instrucciones
 tipo_instruccion obtener_instruccion(const char* op) {
     if (strcmp(op, "CREATE") == 0) return CREATE;
     if (strcmp(op, "TRUNCATE") == 0) return TRUNCATE;
@@ -517,7 +533,7 @@ tipo_instruccion obtener_instruccion(const char* op) {
     if (strcmp(op, "FLUSH") == 0) return FLUSH;
     if (strcmp(op, "DELETE") == 0) return DELETE;
     if (strcmp(op, "END") == 0) return END;
-    return DESCONOCIDA,
+    return DESCONOCIDA;
 }
 
 //Devuelve 'true' si la instrucción fue END, 'false' en cualquier otro caso.
@@ -540,20 +556,20 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
 
     bool fue_end = false;
     
-    tipo_instruccion inst_type = obtener_instruccion(op);
+    tipo_instruccion inst_tipo = obtener_instruccion(op);
 
     // 2. Usamos el enum en el switch
-    switch (inst_type) {
+    switch (inst_tipo) {
         case CREATE: {
             char* file_tag = strtok(NULL, " ");
-            ejecutar_create(file_tag, qid);
+            ejecutar_create(file_tag);
             break;
         }
         case TRUNCATE: {
             char* file_tag = strtok(NULL, " ");
             char* tam_str = strtok(NULL, " ");
             int nuevo_tam = (tam_str != NULL) ? atoi(tam_str) : 0;
-            ejecutar_truncate(file_tag, nuevo_tam, qid);
+            ejecutar_truncate(file_tag, nuevo_tam);
             break;
         }
         case WRITE: {
@@ -622,17 +638,6 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
 }
 
 // ==== Funciones de ejecucion de instrucciones ====
-void ejecutar_create(char* file_tag){
-    t_paquete* paquete = crear_paquete(CREATE);
-    int tam = strlen(file_tag) + 1;
-    agregar_a_paquete(paquete, file_tag, tam);
-    int tamanio = 0;
-    agregar_a_paquete(paquete, &tamanio, sizeof(int));
-
-    enviar_paquete(paquete, socket_storage);
-    eliminar_paquete(paquete);
-    log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", file_tag);
-}
 
 // Comentario dantesco: Tienen dos definiciones de la funcion ejecutar_create
 // Fijense que este es el correcto, pero envien el tamanio antes.
