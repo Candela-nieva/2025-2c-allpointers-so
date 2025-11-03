@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <commons/log.h>
 #include <commons/config.h>
+#include <commons/collections/list.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 
@@ -58,6 +59,22 @@ typedef struct {
     pthread_mutex_t mutex;          // mutex para sincronización de acceso
 } t_memoria_interna;
 
+// ============== Tabla de Páginas (por cada File:Tag)================
+
+typedef struct {
+    int num_pagina;
+    int marco;
+    bool presente;
+} t_pagina;
+
+typedef struct {
+    char file_tag[128];
+    t_list* paginas;        // lista de t_pagina* (commons/list.h)
+    int cant_paginas;
+} t_tabla_paginas;
+
+
+// =========== Variables globales ==================
 
 extern t_log* loggerWorker;
 extern t_config* config;
@@ -78,4 +95,11 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc);
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
 tipo_instruccion obtener_instruccion(const char* op);
 static void notificar_fin_query_a_master(int qid, const char* motivo);
+void ejecutar_write(char* tag, int direccionBase, char* contenido, int qid);
+t_bloque_memoria* buscar_bloque(char* tag, int bloque_id);
+int seleccionar_bloque_victima();
+int reemplazo_clock_modificado();
+int reemplazo_lru();
+void enviar_bloque_a_storage(t_bloque_memoria* bloque);
+void solicitar_bloque_a_storage(char* tag, int bloque_id, t_bloque_memoria* destino);
 #endif

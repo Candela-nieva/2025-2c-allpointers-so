@@ -37,6 +37,12 @@ typedef enum{
     MASTER_TO_QC_END,
     WORKER_TO_MASTER_END, // Mensaje que se le manda a query
     PC_ACTUALIZADO,
+    CREATE_OK,
+    TRUNCATE_OK,
+    SOLICITAR_BLOQUE,
+    ENVIAR_BLOQUE,
+    ESCRIBIR_BLOQUE,
+    STORAGE_OK,
     DESALOJO   // Mensaje que se le manda a worker
 } op_code;
 
