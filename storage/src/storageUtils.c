@@ -21,7 +21,7 @@ t_config *config_SB = NULL;
 t_config_storage *config_struct = NULL;
 t_config_superblock *config_superBlock = NULL;
 char* config_storage;
-
+t_config* configHash = NULL;
 //==========INICIALIZACION==========
 
 void inicializar_config(void){
@@ -69,8 +69,6 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 	return nuevo_logger;
 }
 
-
-
 //==========CONEXIONES==========
 
 void iniciar_servidor_multihilo(void)
@@ -105,10 +103,19 @@ void iniciar_servidor_multihilo(void)
 
 void inicializar_montaje(){
     diccionario_archivos = dictionary_create();
+    
+
     cargar_config_superBlock();
     freshStart();
     initialFile();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
+}
+
+void cargar_config_hashIndex(){
+    char path_blocks_hash[256];
+    sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
+    configHash = config_create(path_blocks_hash);
+
 }
 
 void cargar_config_superBlock(){
@@ -253,7 +260,9 @@ void crear_physical_blocks() {
 void initialFile(){
     op_create("initial_file","BASE");
     op_truncate("initial_file","BASE",tam_bloq);
-    op_tag("initial_file", "BASE", "BASE2");
+    marcar_ocupado_en_bitmap(0);
+    op_tag("initial_file","BASE","BASE2");
+    op_write("initial_file","BASE2", 0, "hOla, me llamo Rusell y soy un guia explorador");
     /*int bloqueInicial = buscar_bloque_libre();
     bitarray_set_bit(bitarray,bloqueInicial);
     char *path_bloq = buscar_bloque_fisico(bloqueInicial);
@@ -267,12 +276,10 @@ void initialFile(){
 //==========BITMAP==========
 int buscar_bloque_libre(){
     for(int i = 0; i < cantBloq; i++){
-    
-        if(bitarray_test_bit (bitarray, i)==0){
+        if(bitarray_test_bit(bitarray, i)==0){
             log_info(loggerStorage, "BLOQUE LIBRE ENCONTRADO %d",i);
+            marcar_ocupado_en_bitmap(i);
             return i;
-        }else{
-            log_info(loggerStorage, "BLOQUE NO LIBRE %d",i);
         }
             
     }
@@ -419,12 +426,15 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
 
     if (bloques_nuevos > bloques_actuales) {
         char *path_block0 = buscar_bloque_fisico(0);
+
         for (int i = bloques_actuales; i < bloques_nuevos; i++) {
             if(!agrandarArchivo(meta, tag->pathTag, i, path_block0)) {
                 free(path_block0);
                 destruir_metadata(meta);
                 return false;
             }
+            tag->logBlocks++;
+            list_add(tag->physicalBlocks, (void*)0); //decimos que tiene asociado el bloque 0
             log_info(loggerStorage, "##<QUERY_ID> - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico 0", nombreArch, nombreTag, i);
         }
         free(path_block0);
@@ -433,6 +443,7 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
             int* pbloqfis = list_get(meta->blocks, i);
             int bloque_fisico = pbloqfis ? *pbloqfis : 0;
             achicarArchivo(meta, tag->pathTag, ancho, i, bloque_fisico);
+            tag->logBlocks--;
             log_info(loggerStorage, "##<QUERY_ID> - %s>:%s Se eliminó el hard link del bloque lógico %06d al bloque físico %d", nombreArch, nombreTag, i, bloque_fisico);
         }
     }
@@ -461,20 +472,84 @@ bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag){
     return false;
 }
 
+bool op_commit(char* nombreArch, char *nombreTag){
+    t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
+    if(tag){
+        for(int i = 0; i < tag->logBlocks - 1; i++){
+            char *bloqLog = buscar_bloq_logico(tag, i);
+            char *hash = crypto_md5 (bloqLog, tam_bloq);
+            
+            //falta completar y neuronas
+            
+        }
+        
+    }
+    return false;
+}
+
+bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido){
+    t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
+    if(tag){
+        if(tag->estado != COMMITED) {
+            int bloqLog = direccBase / tam_bloq;
+            int offset = direccBase % tam_bloq;
+            log_info(loggerStorage, "## BLOQ LOGICO A ESCRIBIR %d", bloqLog);
+            pthread_mutex_lock(&tag->mutexTag);
+            int bloqFis = list_get(tag->physicalBlocks, bloqLog);
+            pthread_mutex_unlock(&tag->mutexTag);
+            log_info(loggerStorage, "## LE CORRESPONDE EL BLOQFIS %d", bloqFis);
+            char * pathBloqFis = buscar_bloque_fisico(bloqFis);
+            char *pathBloqLog = buscar_bloq_logico(tag, bloqLog);
+            log_info(loggerStorage, "## SE ESCRIBE SOBRE EL bloqLog %s", pathBloqLog);
+            //buscar bloque fisico al que esta asociado el link del bloque logico
+            struct stat st;
+            if (stat(pathBloqFis, &st) == 0) {
+                if (st.st_nlink == 1) {
+                    //marcar_libre_en_bitmap(bloque_fisico);
+                    FILE *bloqL = fopen(pathBloqLog, "r+");
+                    if(!bloqL){
+                        log_error(loggerStorage, "Error al abrir el bloque lógico '%s' : %s", pathBloqLog, strerror(errno));
+                        return false;
+                    }
+                    fseek(bloqL, offset, SEEK_SET);
+                    fwrite(contenido, 1, strlen(contenido), bloqL);
+                    fclose(bloqL);
+                    free(pathBloqLog);
+                }else{
+                    unlink(pathBloqLog);
+                    int nuevoBloqFis = buscar_bloque_libre();
+                    char * pathBloqFis = buscar_bloque_fisico(nuevoBloqFis);
+                    link(pathBloqLog, pathBloqFis);
+                    log_info(loggerStorage, "##<QUERY_ID> - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", nombreArch, nombreTag, bloqLog, nuevoBloqFis);
+                    FILE *bloqL = fopen(pathBloqFis, "r+");
+                    if(!bloqL){
+                        log_error(loggerStorage, "Error al abrir el bloque lógico '%s' : %s", pathBloqFis, strerror(errno));
+                        return false;
+                    }
+                    fseek(bloqL, offset, SEEK_SET);
+                    fwrite(contenido, 1, strlen(contenido), bloqL);
+                    fclose(bloqL);
+                    free(pathBloqLog);
+                    //faltan frees y falta mejor implementacion de bloques logicos
+                }
+            }
+        }
+    }
+}
+
 void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     t_fcb *arch = dictionary_get(diccionario_archivos,nombreArch);
     t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreArch,arch->tags);
     //REVISAR ESTRUCTURAS ADMINISTRATIVAS PARA TAG Y METADATA
-    //nuevoTag->tamanio = tagOrigen->tamanio;
-    //nuevoTag->estado = WIP;
+    nuevoTag->tamanio = tagOrigen->tamanio;
+    nuevoTag->estado = WORK_IN_PROGRESS;
+    nuevoTag->logBlocks = tagOrigen->logBlocks;
+    nuevoTag->physicalBlocks = list_duplicate (tagOrigen->physicalBlocks);
     t_metadata *meta = leer_metadata(nombreArch, nombreNuevoTag);
 
     meta->estado = WORK_IN_PROGRESS;
-    //GUARDAR METADATA NO FUNCO
     guardar_metadata(meta, nombreArch, nombreNuevoTag);
-    log_info(loggerStorage, "META ACTUALIZADA");
     destruir_metadata(meta);
-    log_info(loggerStorage, "META DESTRUIDA");
 }
 
 void marcar_libre_en_bitmap(int nro_fisico) {
@@ -484,6 +559,15 @@ void marcar_libre_en_bitmap(int nro_fisico) {
     size_t bytes_bitmap = (cantBloq + 7) / 8;
     msync(mappeo, bytes_bitmap, MS_SYNC);
     log_info(loggerStorage, "## Bloque Físico Liberado - Número de Bloque: %d", nro_fisico);
+}
+
+void marcar_ocupado_en_bitmap(int nro_fisico) {
+    if (nro_fisico < 0 || nro_fisico >= cantBloq)
+        return;
+    bitarray_set_bit(bitarray, nro_fisico);
+    size_t bytes_bitmap = (cantBloq + 7) / 8;
+    msync(mappeo, bytes_bitmap, MS_SYNC);
+    log_info(loggerStorage, "## Bloque Físico Ocupado - Número de Bloque: %d", nro_fisico);
 }
 
 void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag) {
@@ -584,7 +668,6 @@ char *path_Metadata(char *nombreArch, char *nombreTag){
     return metadata;
 }
 
-
 t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
     t_fcb *fcb = malloc(sizeof(t_fcb));
     fcb->nombreArch = nombreNuevoArch;
@@ -603,7 +686,7 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
     tag->nombreTag = nombreNuevoTag;
     tag->tamanio = 0;
     tag->physicalBlocks = list_create();
-    tag->logBlocks = list_create();
+    tag->logBlocks = 0;
     tag->estado = WORK_IN_PROGRESS;
     dictionary_put(diccionarioTagsArch, tag->nombreTag, tag);
     return tag;

@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <commons/log.h>
 #include <commons/config.h>
+#include <commons/crypto.h>
 #include <commons/bitarray.h>
 #include <utils/chiches.h>
 #include <sys/mman.h>
@@ -45,8 +46,10 @@ typedef struct {
     size_t tamanio;
     //usar listas para saber que bloques ocupa?
     t_list *physicalBlocks;
-    t_list *logBlocks;
+    int logBlocks;
+    //t_list *logBlocks;
     t_estadoTag estado;
+    pthread_mutex_t mutexTag;
 }t_tag;
 
 typedef struct {
@@ -91,11 +94,15 @@ void initialFile();
 int buscar_bloque_libre();
 char *buscar_bloque_fisico(int nroBloque);
 void marcar_libre_en_bitmap(int nro_fisico);
+void marcar_ocupado_en_bitmap(int nro_fisico);
 //==========FORMATO DE ENTRADAS==========
 int calcularAncho();
 //==========OPERACIONES==========
 bool op_create(char *nombreArch, char *nombreTag);
 bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio);
+bool op_commit(char* nombreArch, char *nombreTag);
+bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido);
+
 void crear_metadata(char* path, char* nuevoPath);
 void destruir_metadata(t_metadata* meta);
 bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag);

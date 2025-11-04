@@ -15,7 +15,8 @@ t_memoria_interna memoria;
 // Sincronización entre hilos
 pthread_mutex_t mutex_storage_ready= PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond_storage_ready = PTHREAD_COND_INITIALIZER;
-bool storage_ready = false;
+bool storage_ready = false; 
+
 // ----------------------
 
 #define LONG_MAX
@@ -526,7 +527,7 @@ void ejecutar_write(char* tag, int direccionBase, char* contenido, int qid) {
 
     // Si el bloque no está en memoria, hay que traerlo desde Storage
     if(!bloque) {
-        bloque = manejar_bloque_noencontrado(bloque, tag, bloque_id);
+        //bloque = manejar_bloque_noencontrado(bloque, tag, bloque_id);
         
         if (!bloque) {
                 log_error(loggerWorker, "Query %d: ERROR page fault al traer %s:%d", qid, tag, bloque_id);
