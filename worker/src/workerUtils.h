@@ -44,7 +44,7 @@ typedef struct {
     char file_tag[128];     // nombre del file:tag que ocupa este marco (cadena vacia si esta libre)
     //int marco_id;          // ID del marco dentro del file:tag
     int pagina_logica;      
-    bool modificado;    s    // indica si el marco ha sido modificado (1) o no (0) (dirty bit)
+    bool modificado;        // indica si el marco ha sido modificado (1) o no (0) (dirty bit)
     bool en_uso;            // indica si el marco está en uso (1) o libre (0) (para CLOCK)
     time_t ultima_ref;      // timestamp de la última referencia (para LRU)
     //void* datos;          // puntero a los datos del bloque // CREO QUE NO VA
@@ -70,7 +70,7 @@ typedef struct {
     bool presente;      // bit de presenncia (1 = en memoria)
     bool modificado;    // bit de modificado (1 = modificado)
     bool uso;           // bit de uso (1 = usado recientemente - para CLOCK)
-    time_t ultima_red;  // timestamp de la última referencia (para LRU)
+    time_t ultima_ref;  // timestamp de la última referencia (para LRU)
 } t_pagina;
 
 typedef struct {
@@ -105,6 +105,9 @@ static void notificar_fin_query_a_master(int qid, const char* motivo);
 void ejecutar_write(char* tag, int direccionBase, char* contenido, int qid);
 //t_bloque_memoria* buscar_bloque(char* tag, int bloque_id);
 t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid);
+void ejecutar_create(char* file_tag);
+void ejecutar_truncate(char* tag, int nuevo_tam);
+void inicializar_memoria_interna();
 
 int seleccionar_victima(int quid);
 int seleccionar_bloque_victima();

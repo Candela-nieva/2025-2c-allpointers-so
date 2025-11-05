@@ -551,14 +551,14 @@ void ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
     memcpy(direccion_marco, contenido, tamanio_contenido);
 
     // Actualizar metadata de la pagina...
-    pagina.modificado = true;
-    pagina.uso = true;
-    pagina.ultima_ref = time(NULL);
+    pagina->modificado = true;
+    pagina->uso = true;
+    pagina->ultima_ref = time(NULL);
 
     pthread_mutex_unlock(&memoria.mutex);
 
     
-    // Si el bloque no está en memoria, hay que traerlo desde Storage
+    /*// Si el bloque no está en memoria, hay que traerlo desde Storage
     if(!bloque) {
         //bloque = manejar_bloque_noencontrado(bloque, tag, bloque_id);
         
@@ -566,7 +566,7 @@ void ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
                 log_error(loggerWorker, "Query %d: ERROR page fault al traer %s:%d", qid, tag, bloque_id);
                 notificar_fin_query_a_master(qid, "ERROR_TRAER_BLOQUE");
                 return;
-        
+    
         /*
         // Buscar victima o espacio libre
         int victima = seleccionar_bloque_victima();
@@ -579,16 +579,16 @@ void ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
 
         // Solcitar bloque a Storage (para tener su contenido actual)
         solicitar_bloque_a_storage(tag, bloque_id, bloque);
-        */
+        
         
         }
-    }
+    }*/
     
 
     usleep((useconds_t)retardo_memoria * 1000); // Retardo por escritura en memoria
 
     log_info(loggerWorker, "Query %d: Accion: ESCRIBIR - Direccion Fisica: %d - Valor: %s", 
-        qid, direccionBase, contenido); // LOG OBLIGATORIO
+        qid, direccion_base, contenido); // LOG OBLIGATORIO
 }
 
 t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid) {
@@ -598,7 +598,7 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
 
     t_marco* marco_victima = &memoria.marcos[indice_marco_victima];  
 
-    if(marco_victima.ocupado) {
+    if(marco_victima->ocupado) {
         char* file_tag_victima = marco_victima->file_tag;
         int num_pagina_victima = marco_victima->pagina_logica;
         // Buscar su tabla y entrada de página
@@ -609,7 +609,7 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
         if(pagina_victima) {
             if(pagina_victima->modificado) {
                 log_info(loggerWorker, "Query %d: Guardando página modificada %s:%d en Storage antes de reemplazo",
-                     qid, marco->file_tag, marco->pagina_logica);
+                     qid, marco_victima->file_tag, marco_victima->pagina_logica);
                 //enviar_pagina_a_storage(file_tag_victima, num_pagina_victima, marco_victima);
             }
             pagina_victima->presente = false;
@@ -621,12 +621,12 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     //solicitar_pagina_a_storage(file_tag, pagina_logica, marco_victima);
 
     // Actualizamos metadata del marco
-    strcpy(marco->file_tag, file_tag);
-    marco->pagina_logica = pagina_logica;
-    marco->ocupado = true;
-    marco->modificado = false;
-    marco->en_uso = true;
-    marco->ultima_ref = time(NULL);
+    strcpy(marco_victima->file_tag, file_tag);
+    marco_victima->pagina_logica = pagina_logica;
+    marco_victima->ocupado = true;
+    marco_victima->modificado = false;
+    marco_victima->en_uso = true;
+    marco_victima->ultima_ref = time(NULL);
 
     // Creamos o actualizamos entrada de tabla de páginas
     t_pagina* nueva = buscar_pagina(tabla, pagina_logica);
@@ -736,12 +736,12 @@ void inicializar_memoria_interna() {
     
     // Inicializar marcos
     for (int i = 0; i < memoria.cant_marcos; ++i) {
-        memoria->marcos[i].ocupado = false;
-        memoria->marcos[i].modificado = false;
-        memoria->marcos[i].en_uso = false;
-        memoria->marcos[i].pagina_logica = -1;
-        memoria->marcos[i].ultima_ref = 0;
-        memoria->marcos[i].file_tag[0] = '\0';
+        memoria.marcos[i].ocupado = false;
+        memoria.marcos[i].modificado = false;
+        memoria.marcos[i].en_uso = false;
+        memoria.marcos[i].pagina_logica = -1;
+        memoria.marcos[i].ultima_ref = 0;
+        memoria.marcos[i].file_tag[0] = '\0';
         //strcpy(memoria.marcos[i].file_tag, "");
     }
 
