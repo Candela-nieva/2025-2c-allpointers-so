@@ -9,6 +9,7 @@
 #include <commons/log.h>
 #include <commons/config.h>
 #include <commons/collections/list.h>
+#include <commons/collections/dictionary.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 
@@ -40,19 +41,21 @@ typedef enum {
 
 // ============== Memoria Interna ================
 typedef struct {
-    char file_tag[128];     // nombre del file:tag que ocupa este bloque
-    int bloque_id;          // ID del bloque dentro del file:tag
-    bool modificado;        // indica si el bloque ha sido modificado (1) o no (0) (dirty bit)
-    bool en_uso;            // indica si el bloque está en uso (1) o libre (0) (para CLOCK)
+    char file_tag[128];     // nombre del file:tag que ocupa este marco (cadena vacia si esta libre)
+    //int marco_id;          // ID del marco dentro del file:tag
+    int pagina_logica;      
+    bool modificado;    s    // indica si el marco ha sido modificado (1) o no (0) (dirty bit)
+    bool en_uso;            // indica si el marco está en uso (1) o libre (0) (para CLOCK)
     time_t ultima_ref;      // timestamp de la última referencia (para LRU)
-    void* datos;            // puntero a los datos del bloque
-    bool ocupado;           // indica si el bloque está ocupado (1) o libre (0)
-} t_bloque_memoria;
+    //void* datos;          // puntero a los datos del bloque // CREO QUE NO VA
+    bool ocupado;           // indica si el marco está ocupado (1) o libre (0)
+} t_marco;
 
 typedef struct {
-    t_bloque_memoria* bloques;      // array de bloques de memoria
-    int cant_bloques;               // cantidad total de bloques en memoria
-    int tamanio_bloque;             // tamaño de cada bloque en bytes
+    void* buffer;                    // unico malloc que contiene todos los marcos
+    t_marco* marcos;                // array de marcos de memoria
+    int cant_marcos;                // cantidad total de bloques en memoria
+    int tamanio_marco;              // tamaño de cada bloque en bytes
     int tamanio_total;              // tamaño total de la memoria en bytes
     int puntero_clock;              // puntero para el algoritmo CLOCK
     char algoritmo[10];             // CLOCK o LRU 
@@ -62,15 +65,18 @@ typedef struct {
 // ============== Tabla de Páginas (por cada File:Tag)================
 
 typedef struct {
-    int num_pagina;
-    int marco;
-    bool presente;
+    int num_pagina;     // numero de pagina
+    int marco;          // numero de marco
+    bool presente;      // bit de presenncia (1 = en memoria)
+    bool modificado;    // bit de modificado (1 = modificado)
+    bool uso;           // bit de uso (1 = usado recientemente - para CLOCK)
+    time_t ultima_red;  // timestamp de la última referencia (para LRU)
 } t_pagina;
 
 typedef struct {
-    char file_tag[128];
+    char file_tag[128];     // identificador del file:tag
     t_list* paginas;        // lista de t_pagina* (commons/list.h)
-    int cant_paginas;
+    //int cant_paginas;
 } t_tabla_paginas;
 
 
@@ -80,6 +86,7 @@ extern t_log* loggerWorker;
 extern t_config* config;
 extern t_config_worker* config_struct; 
 extern char* config_worker;
+extern t_dictionary* tabla_de_paginas;
 
 // =================== MAIN Y BASIC =========================
 void inicializar_config(void);
@@ -96,10 +103,20 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
 tipo_instruccion obtener_instruccion(const char* op);
 static void notificar_fin_query_a_master(int qid, const char* motivo);
 void ejecutar_write(char* tag, int direccionBase, char* contenido, int qid);
-t_bloque_memoria* buscar_bloque(char* tag, int bloque_id);
+//t_bloque_memoria* buscar_bloque(char* tag, int bloque_id);
+t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid);
+
+int seleccionar_victima(int quid);
 int seleccionar_bloque_victima();
 int reemplazo_clock_modificado();
 int reemplazo_lru();
-void enviar_bloque_a_storage(t_bloque_memoria* bloque);
-void solicitar_bloque_a_storage(char* tag, int bloque_id, t_bloque_memoria* destino);
+
+//void enviar_pagina_a_storage(t_marco* bloque);
+//void solicitar_pagina_a_storage(char* tag, int bloque_id, t_marco* destino);
+void* direccion_fisica_marco(int marco_id);
+
+void inicializar_tablas_paginas();
+void liberar_tablas_paginas();
+t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag);
+t_pagina* buscar_pagina(t_tabla_paginas* tabla, int num_pagina);
 #endif

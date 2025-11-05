@@ -11,6 +11,8 @@ char* config_worker;
 atomic_int hay_interrupt = ATOMIC_VAR_INIT(0);
 int tamanio_bloque_storage = 0; // el antiguo tamanio_pag
 t_memoria_interna memoria;
+t_dictionary* tablas_de_paginas;
+pthread_mutex_t mutex_tablas_paginas;
 
 // Sincronización entre hilos
 pthread_mutex_t mutex_storage_ready= PTHREAD_MUTEX_INITIALIZER;
@@ -518,13 +520,44 @@ void ejecutar_truncate(char* tag, int nuevo_tam) {
 }
 
 // WRITE
-void ejecutar_write(char* tag, int direccionBase, char* contenido, int qid) {
-    int bloque_id = direccionBase / tamanio_bloque_storage;
-    int offset_en_bloque = direccionBase % tamanio_bloque_storage;
+void ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
+    
+    // Y QUE PASA SI NO ESTA CREADO ESE FILE TAG?
+
+    t_tabla_paginas* tabla = obtener_o_crear_tabla_paginas(tag);
+    
+    int pagina_logica = direccion_base / tamanio_bloque_storage;
+    int offset = direccion_base % tamanio_bloque_storage;
     int tamanio_contenido = strlen(contenido);
 
-    t_bloque_memoria* bloque = buscar_bloque(tag, bloque_id);
+    t_pagina* pagina = buscar_pagina(tabla, pagina_logica);
+    //t_bloque_memoria* bloque = buscar_bloque(tag, bloque_id);
 
+    // Si no esta presente --> PAGE FAULT
+    if(!pagina || !pagina->presente) {
+        pagina = manejar_page_fault(tag, pagina_logica, tabla, qid);
+    }
+
+    int marco = pagina->marco;
+    void* direccion_marco = memoria.buffer + (marco * tamanio_bloque_storage) + offset;
+    void* direccion_marquitos = direccion_fisica_marco(marco) + offset;
+
+    pthread_mutex_lock(&memoria.mutex);
+
+    // Escrbiendo...... (limitando a lo que entra en el bloque)
+    if(offset + tamanio_contenido > memoria.tamanio_marco)
+        tamanio_contenido = memoria.tamanio_marco - offset;
+
+    memcpy(direccion_marco, contenido, tamanio_contenido);
+
+    // Actualizar metadata de la pagina...
+    pagina.modificado = true;
+    pagina.uso = true;
+    pagina.ultima_ref = time(NULL);
+
+    pthread_mutex_unlock(&memoria.mutex);
+
+    
     // Si el bloque no está en memoria, hay que traerlo desde Storage
     if(!bloque) {
         //bloque = manejar_bloque_noencontrado(bloque, tag, bloque_id);
@@ -533,8 +566,6 @@ void ejecutar_write(char* tag, int direccionBase, char* contenido, int qid) {
                 log_error(loggerWorker, "Query %d: ERROR page fault al traer %s:%d", qid, tag, bloque_id);
                 notificar_fin_query_a_master(qid, "ERROR_TRAER_BLOQUE");
                 return;
-        
-        
         
         /*
         // Buscar victima o espacio libre
@@ -550,125 +581,70 @@ void ejecutar_write(char* tag, int direccionBase, char* contenido, int qid) {
         solicitar_bloque_a_storage(tag, bloque_id, bloque);
         */
         
+        }
     }
-
-    // Escribir contenido dentro del bloque (sin pasar los límites)
-    if(offset_en_bloque + tamanio_contenido > tamanio_bloque_storage)
-        tamanio_contenido = tamanio_bloque_storage - offset_en_bloque;
-
-    pthread_mutex_lock(&memoria.mutex);
     
-    memcpy(bloque->datos + offset_en_bloque, contenido, tamanio_contenido);
-    bloque->modificado = true; // marcar como modificado
-    bloque->en_uso = true; // marcar como en uso
-    bloque->ultima_ref = time(NULL); // actualizar ultima referencia
-    
-    /*
-    // La dirección física es el puntero al inicio del buffer del marco...
-    void* puntero_al_marco = pagina_en_memoria->datos;
-    // ...más el offset que calculamos.
-    void* direccion_fisica_puntero = puntero_al_marco + offset_en_bloque;
-    */
-
-    pthread_mutex_unlock(&memoria.mutex);
 
     usleep((useconds_t)retardo_memoria * 1000); // Retardo por escritura en memoria
 
-    log_info(loggerWorker, "Query %d: Accion: ESCRIBIR - Direccion Fisica: %d - Valor: %s", qid, direccionBase, contenido); // LOG OBLIGATORIO
+    log_info(loggerWorker, "Query %d: Accion: ESCRIBIR - Direccion Fisica: %d - Valor: %s", 
+        qid, direccionBase, contenido); // LOG OBLIGATORIO
 }
-}
-/**
- * 3. WRITE <NOMBRE_FILE>:<TAG> <DIRECCIÓN BASE> <CONTENIDO>
- * Escribe en la Memoria Interna. Si la página no está, la trae de Storage.
- * Devuelve 'true' si fue exitoso, 'false' si hubo un error.
-void ejecutar_write(char* file_tag, int direccionBase, char* contenido, int qid) {
 
-    // --- 1. VALIDAR Y CALCULAR ---
-    int bloque_id = direccionBase / tamanio_bloque_storage;
-    int offset_en_bloque = direccionBase % tamanio_bloque_storage;
-    int tamanio_contenido = strlen(contenido);
+t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid) {
+    log_info(loggerWorker, "Query %d: Page Fault en %s página %d", qid, file_tag, pagina_logica);
 
-    // ERROR: Escritura fuera de límite
-    // (Tu código anterior lo truncaba, pero el enunciado pide abortar)
-    if (offset_en_bloque + tamanio_contenido > tamanio_bloque_storage) {
-        log_error(loggerWorker, "Query %d: ERROR: Escritura excede el límite del bloque.", qid);
-        notificar_fin_query_a_master(qid, "ERROR_ESCRITURA_FUERA_LIMITE");
-        return false; // FRACASO: Aborta la query
-    }
+    int indice_marco_victima = seleccionar_victima(qid);
 
-    usleep((useconds_t)retardo_memoria * 1000);
+    t_marco* marco_victima = &memoria.marcos[indice_marco_victima];  
 
-    // --- 3. ACCESO A MEMORIA (SEGURO) --
-    pthread_mutex_lock(&memoria.mutex);
+    if(marco_victima.ocupado) {
+        char* file_tag_victima = marco_victima->file_tag;
+        int num_pagina_victima = marco_victima->pagina_logica;
+        // Buscar su tabla y entrada de página
+        pthread_mutex_lock(&mutex_tablas_paginas);
+        t_tabla_paginas* tabla_victima = dictionary_get(tablas_de_paginas, file_tag_victima);
+        t_pagina* pagina_victima = buscar_pagina(tabla_victima, num_pagina_victima);
 
-    t_bloque_memoria* pagina_en_memoria = buscar_bloque(file_tag, bloque_id);
-
-    // --- 4. MANEJAR PAGE MISS (Lógica integrada) ---
-    if (pagina_en_memoria == NULL) {
-
-        // Pedimos los datos (LIBERAMOS EL LOCK para la I/O)
-        pthread_mutex_unlock(&memoria.mutex);
-        void* datos_de_storage = pedir_bloque_a_storage(qid, file_tag, bloque_id);
-        pthread_mutex_lock(&memoria.mutex); // Volvemos a tomar el lock
-
-        // Llamamos a tu algoritmo de reemplazo DIRECTAMENTE
-        int indice_victima = seleccionar_bloque_victima(); 
-        pagina_en_memoria = &memoria.bloques[indice_victima]; // bloque a usar
-
-        // Si el bloque victima esta modificado, escribirlo a Storage
-        if (pagina_en_memoria->ocupado && pagina_en_memoria->modificado) {
-            
-            // Liberamos lock para la I/O de escritura
-            pthread_mutex_unlock(&memoria.mutex);
-            bool ok = enviar_bloque_a_storage(pagina_en_memoria);
-            pthread_mutex_lock(&memoria.mutex);
-
-            if (!ok) {
-                free(datos_de_storage);
-                return false; // Error al guardar la víctima
+        if(pagina_victima) {
+            if(pagina_victima->modificado) {
+                log_info(loggerWorker, "Query %d: Guardando página modificada %s:%d en Storage antes de reemplazo",
+                     qid, marco->file_tag, marco->pagina_logica);
+                //enviar_pagina_a_storage(file_tag_victima, num_pagina_victima, marco_victima);
             }
+            pagina_victima->presente = false;
         }
-
-        // Cargar los datos nuevos en el marco (como en tu función solicitar_bloque)
-        memcpy(pagina_en_memoria->datos, datos_de_storage, tamanio_bloque_storage);
-        free(datos_de_storage);
-
-        // Actualizar metadata del marco
-        strncpy(pagina_en_memoria->file_tag, file_tag, 127);
-        pagina_en_memoria->file_tag[127] = '\0';
-        pagina_en_memoria->bloque_id = bloque_id;
-        pagina_en_memoria->ocupado = true;
-        pagina_en_memoria->modificado = false; // "Limpio"
-        
-        // Log Obligatorio: Asignación
-        log_info(loggerWorker, "Query %d: Se asigna el Marco: %d a la Página: %d perteneciente al File: %s Tag: <TAG>",
-                 qid, indice_victima, bloque_id, file_tag);
+        pthread_mutex_unlock(&mutex_tablas_paginas);
     }
 
-    // --- 5. ESCRIBIR EN MEMORIA (PAGE HIT o post-MISS) ---
-    
-    void* puntero_al_marco = pagina_en_memoria->datos;
-    void* direccion_fisica_puntero = puntero_al_marco + offset_en_bloque;
+    // Pedimos a storage la nueva pagina
+    //solicitar_pagina_a_storage(file_tag, pagina_logica, marco_victima);
 
-    memcpy(direccion_fisica_puntero, contenido, tamanio_contenido);
-    
-    // Marcar flags
-    pagina_en_memoria->modificado = true;
-    pagina_en_memoria->en_uso = true;
-    pagina_en_memoria->ultima_ref = time(NULL);
+    // Actualizamos metadata del marco
+    strcpy(marco->file_tag, file_tag);
+    marco->pagina_logica = pagina_logica;
+    marco->ocupado = true;
+    marco->modificado = false;
+    marco->en_uso = true;
+    marco->ultima_ref = time(NULL);
 
-    // --- 6. LOG OBLIGATORIO Y DESBLOQUEO ---
+    // Creamos o actualizamos entrada de tabla de páginas
+    t_pagina* nueva = buscar_pagina(tabla, pagina_logica);
     
-    // Log Obligatorio: (Corregido para usar %p para el puntero)
-    log_info(loggerWorker, "Query %d: Acción: ESCRIBIR Dirección Física: %p Valor: %s", 
-             qid, 
-             direccion_fisica_puntero, 
-             contenido);
-    
-    pthread_mutex_unlock(&memoria.mutex);
-    
-    return true; // ÉXITO
-}*/
+    if(!nueva) {
+        nueva = malloc(sizeof(t_pagina));
+        nueva->num_pagina = pagina_logica;
+        list_add(tabla->paginas, nueva);
+    }
+
+    nueva->marco = marco_victima;
+    nueva->presente = true;
+    nueva->modificado = false;
+    nueva->uso = true;
+    nueva->ultima_ref = time(NULL);
+
+    return nueva;
+}
 
 
 // TODO: completar las demas instrucciones (con el tema de incorporar memoria interna y demas)
@@ -740,46 +716,61 @@ void* iniciar_conexion_storage(void* arg){
 // ======================== Memoria Interna ================================
 
 void inicializar_memoria_interna() {
-    memoria.tamanio_bloque = tamanio_bloque_storage;
-    memoria.tamanio_total = tam_memoria;
-    memoria.cant_bloques = memoria.tamanio_total / memoria.tamanio_bloque;
-    memoria.bloques = calloc(memoria.cant_bloques, sizeof(t_bloque_memoria)); 
+    memoria.tamanio_marco = tamanio_bloque_storage; // viene del handshake
+    memoria.tamanio_total = tam_memoria;            // viene de config
+    memoria.cant_marcos = memoria.tamanio_total / memoria.tamanio_marco;
     memoria.puntero_clock = 0;
+    //memoria.bloques = calloc(memoria.cant_bloques, sizeof(t_bloque_memoria)); 
+    
     strcpy(memoria.algoritmo, config_struct->algoritmo_reemplazo);
-    pthread_mutex_init(&memoria.mutex, NULL);
-
-    for (int i = 0; i < memoria.cant_bloques; i++) {
-        memoria.bloques[i].datos = malloc(memoria.tamanio_bloque);
-        memoria.bloques[i].ocupado = false;
-        memoria.bloques[i].modificado = false;
-        memoria.bloques[i].en_uso = false;
+    
+    // -- unico malloc para los datos --
+    memoria.buffer = malloc(memoria.tamanio_total);
+    if (!memoria.buffer) {
+        log_info(loggerWorker, "Error al reservar memoria interna (%d bytes)", memoria.tamanio_total);
+        exit(EXIT_FAILURE); // o manejar error
     }
 
-    log_info(loggerWorker, "Memoria Interna inicializada (%d bloques de %d bytes)",
-            memoria.cant_bloques, memoria.tamanio_bloque);    
-} 
+    // -- array de metadatos (metadata por marco) -- 
+    memoria.marcos = calloc(memoria.cant_marcos, sizeof(t_marco));
+    
+    // Inicializar marcos
+    for (int i = 0; i < memoria.cant_marcos; ++i) {
+        memoria->marcos[i].ocupado = false;
+        memoria->marcos[i].modificado = false;
+        memoria->marcos[i].en_uso = false;
+        memoria->marcos[i].pagina_logica = -1;
+        memoria->marcos[i].ultima_ref = 0;
+        memoria->marcos[i].file_tag[0] = '\0';
+        //strcpy(memoria.marcos[i].file_tag, "");
+    }
+
+    inicializar_tablas_paginas();
+
+    log_info(loggerWorker, "Memoria interna inicializada: %d marcos de %d bytes (total %d bytes) - algoritmo = %s",
+             memoria.cant_marcos, memoria.tamanio_marco, memoria.tamanio_total, memoria.algoritmo);
+}
 
 // Para liberar la memoria interna
 void liberar_memoria_interna() {
-    if(memoria.bloques == NULL) {
+    
+    if(memoria.marcos == NULL) {
         log_info(loggerWorker, "No hay bloques en memoria para liberar");
         return;
     }
-
+    
     pthread_mutex_lock(&memoria.mutex);
 
-    // Libero cada bloque
-    for(int i = 0; i < memoria.cant_bloques; i++) {
-        if (memoria.bloques[i].datos != NULL) {
-            free(memoria.bloques[i].datos);
-            memoria.bloques[i].datos = NULL;
-        }
+    if (memoria.buffer) {
+        free(memoria.buffer);
+        memoria.buffer = NULL;
     }
 
-    // Libero el array de bloques
-    free(memoria.bloques);
-    memoria.bloques = NULL;
-
+    if (memoria.marcos) {
+        free(memoria.marcos);
+        memoria.marcos = NULL;
+    }
+    
     pthread_mutex_unlock(&memoria.mutex);
     pthread_mutex_destroy(&memoria.mutex);
 
@@ -789,17 +780,19 @@ void liberar_memoria_interna() {
 
 // Funciones base
 
-t_bloque_memoria* buscar_bloque(char* tag, int bloque_id) {
-    for (int i = 0; i < memoria.cant_bloques; i++) {
-        if (memoria.bloques[i].ocupado &&
-            strcmp(memoria.bloques[i].file_tag, tag) == 0 &&
-            memoria.bloques[i].bloque_id == bloque_id) {
-            memoria.bloques[i].en_uso = true;
-            memoria.bloques[i].ultima_ref = time(NULL);
-            return &memoria.bloques[i];
-        }
-    }
-    return NULL; // no encontrado el bloque
+// Me devuelve la direccion de inicio del marco dentro del buffer global
+void* direccion_fisica_marco(int marco_id) {
+    return memoria.buffer + (marco_id * memoria.tamanio_marco);
+}
+
+// Si necesito escribir hago -->
+//void* ptr = direccion_fisica_marco(marco_id) + offset_en_marco;
+//memcpy(ptr, contenido, tamanio);
+
+//REVISAR FUNCIÓN
+
+int seleccionar_victima(int qid) {
+    
 }
 
 int seleccionar_bloque_victima() {
@@ -812,13 +805,15 @@ int seleccionar_bloque_victima() {
     return 0; // por defecto
 }
 
-void solicitar_bloque_a_storage(char* tag, int bloque_id, t_bloque_memoria* destino){
+/*
+//HAY QUE REVISAR ESTA FUNCION
+void solicitar_pagina_a_storage(char* tag, int bloque_id, t_marco* destino){
     t_paquete* paquete = crear_paquete(SOLICITAR_BLOQUE);
     agregar_a_paquete_string(paquete, tag, strlen(tag));
     agregar_a_paquete(paquete, &bloque_id, sizeof(int));
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
-
+    //REVISAR EL CODE OP
     // Recibir contenido
     int op = recibir_operacion(socket_storage);
     if (op != ENVIAR_BLOQUE) {
@@ -827,7 +822,7 @@ void solicitar_bloque_a_storage(char* tag, int bloque_id, t_bloque_memoria* dest
     }
 
     void* buffer = recibir_buffer(socket_storage);
-    memcpy(destino->datos, buffer, memoria.tamanio_bloque);
+    memcpy(destino->datos, buffer, memoria.tamanio_marco);
     free(buffer);
 
     strcpy(destino->file_tag, tag);
@@ -839,8 +834,11 @@ void solicitar_bloque_a_storage(char* tag, int bloque_id, t_bloque_memoria* dest
 
     log_info(loggerWorker, "Bloque [%s:%d] cargado en memoria desde Storage.", tag, bloque_id);
 }
+*/
 
-void enviar_bloque_a_storage(t_bloque_memoria* bloque){
+/*
+//HAY QUE REVISAR EL ENVIAR
+void enviar_pagina_a_storage(t_marco* bloque){
     
     t_paquete* paquete = crear_paquete(ESCRIBIR_BLOQUE); // (Necesitas este op_code en protocolo.h)
     
@@ -863,6 +861,7 @@ void enviar_bloque_a_storage(t_bloque_memoria* bloque){
     }
     return true; // Devuelve ÉXITO
 }
+*/
 
 // --- Algoritmos de reemplazo ---
 
@@ -872,7 +871,7 @@ int reemplazo_clock_modificado() { // revisar
     int victima = -1;
 
     while (true) {
-        t_bloque_memoria* b = &memoria.bloques[memoria.puntero_clock];
+        t_marco* b = &memoria.marcos[memoria.puntero_clock];
 
         if (b->ocupado) {
             // Vuelta 1: buscar U=0, M=0
@@ -897,7 +896,7 @@ int reemplazo_clock_modificado() { // revisar
         }
 
         // Avanzar puntero circular
-        memoria.puntero_clock = (memoria.puntero_clock + 1) % memoria.cant_bloques;
+        memoria.puntero_clock = (memoria.puntero_clock + 1) % memoria.cant_marcos;
 
         // Si di una vuelta completa, paso a la segunda
         if (memoria.puntero_clock == 0) vueltas++;
@@ -909,11 +908,11 @@ int reemplazo_clock_modificado() { // revisar
 
     log_info(loggerWorker, "CLOCK-M seleccionó bloque víctima: %d (U=%d, M=%d)",
             victima,
-            memoria.bloques[victima].en_uso,
-            memoria.bloques[victima].modificado);
+            memoria.marcos[victima].en_uso,
+            memoria.marcos[victima].modificado);
 
     // Avanzar el puntero para la próxima ejecución
-    memoria.puntero_clock = (victima + 1) % memoria.cant_bloques;
+    memoria.puntero_clock = (victima + 1) % memoria.cant_marcos;
 
     return victima;
 }
@@ -924,17 +923,94 @@ int reemplazo_lru() {
     time_t min_ref = time(NULL);
     int victima = 0;
 
-    for(int i = 0; i < memoria.cant_bloques; i++) {
-        if(!memoria.bloques[i].ocupado) {
+    for(int i = 0; i < memoria.cant_marcos; i++) {
+        if(!memoria.marcos[i].ocupado) {
             // Bloque libre --> lo usamos directamente
             log_info(loggerWorker, "LRU seleccionó bloque libre: %d", i);
             return i;
         }
-        if(memoria.bloques[i].ultima_ref < min_ref) {
-            min_ref = memoria.bloques[i].ultima_ref;
+        if(memoria.marcos[i].ultima_ref < min_ref) {
+            min_ref = memoria.marcos[i].ultima_ref;
             victima = i;
         }
     }
 
     return victima;
 }
+
+// =================== Tablas de Paginas =======================
+
+void inicializar_tablas_paginas() {
+    tablas_de_paginas = dictionary_create();
+    pthread_mutex_init(&mutex_tablas_paginas, NULL);
+}
+
+void liberar_tablas_paginas() {
+    dictionary_destroy_and_destroy_elements(tablas_de_paginas, (void*)liberar_tablas_paginas);
+}
+
+t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag) {
+    t_tabla_paginas* tabla = dictionary_get(tablas_de_paginas, file_tag);
+    if(!tabla) {
+        log_info(loggerWorker, "Creando nueva Tabla de Páginas para %s", file_tag);
+        tabla = malloc(sizeof(t_tabla_paginas));
+        strcpy(tabla->file_tag, file_tag);
+        tabla->paginas = list_create();
+        dictionary_put(tablas_de_paginas, strdup(file_tag), tabla);
+    }
+    return tabla;
+}
+
+t_pagina* buscar_pagina(t_tabla_paginas* tabla, int num_pagina) {
+     for (int i = 0; i < list_size(tabla->paginas); i++) {
+        t_pagina* p = list_get(tabla->paginas, i);
+        if (p->num_pagina == num_pagina)
+            return p;
+    }
+    return NULL;
+}
+
+/*
+/**
+ * =========================================================================
+ * FUNCIÓN PRINCIPAL DE ACCESO A MEMORIA (El "Traductor")
+ * =========================================================================
+ * 1. Busca la Tabla de Páginas.
+ * 2. Busca la Entrada de Página (PTE).
+ * 3. Si (presente == false) -> Llama a manejar_page_fault (que veremos después).
+ * 4. Si (presente == true) -> Actualiza bits de uso y devuelve el marco.
+ * Devuelve el NÚMERO DE MARCO o -1 si hay error.
+ 
+int traducir_direccion(char* file_tag, int num_pagina, int qid) {
+    
+    // 1. Buscar la "Tabla" (el índice) del archivo
+    t_tabla_paginas* tabla = obtener_o_crear_tabla_de_paginas(file_tag);
+
+    // 2. Buscar la "Entrada" (la fila) para esa página
+    t_pagina* pte = obtener_pte(tabla, num_pagina); // pte = Page Table Entry
+
+    // 3. Chequear el Bit de Presencia
+    if (pte->presente == false) {
+        // ¡PAGE FAULT! La página no está en RAM.
+        log_warning(loggerWorker, "Query %d: Memoria Miss - File: %s - Pagina: %d", qid, file_tag, num_pagina);
+        
+        // Llamamos al "especialista" (¡Esta es la próxima función a crear!)
+        if (!manejar_page_fault(tabla, pte, qid)) {
+            return -1; // -1 significa error
+        }
+    }
+
+    // 4. ¡PAGE HIT! (Sea porque ya estaba, o porque el Page Fault la trajo)
+    
+    // Actualizamos los bits de uso (para CLOCK/LRU)
+    pthread_mutex_lock(&memoria.mutex);
+    
+    int num_marco = pte->marco;
+    memoria.marcos[num_marco].en_uso = true;
+    memoria.marcos[num_marco].ultima_ref = time(NULL);
+    
+    pthread_mutex_unlock(&memoria.mutex);
+    
+    return num_marco;
+}
+*/
