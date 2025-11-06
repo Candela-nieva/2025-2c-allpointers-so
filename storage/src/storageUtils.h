@@ -76,6 +76,7 @@ void iniciar_servidor_multihilo(void);
 
 //==========FRESH_START==========
 void inicializar_montaje();
+void cargar_config_hashIndex();
 void cargar_config_superBlock();
 void freshStart();
 void verificar_freshStart();
