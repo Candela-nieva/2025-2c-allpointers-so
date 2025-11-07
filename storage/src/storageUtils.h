@@ -94,7 +94,7 @@ void initialFile();
 //char *completar_ceros(int aCompletar);
 //==========BITMAP==========
 int buscar_bloque_libre();
-char *buscar_bloque_fisico(int nroBloque);
+char *obtener_path_bloque_fisico(int nroBloque);
 void marcar_libre_en_bitmap(int nro_fisico);
 void marcar_ocupado_en_bitmap(int nro_fisico);
 //==========FORMATO DE ENTRADAS==========
@@ -105,6 +105,8 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio);
 bool op_commit(char* nombreArch, char *nombreTag);
 bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido);
 bool op_read(char* nombreArch, char *nombreTag, int nroBloque, char *contenido);
+bool op_eliminarTag(char* nombreArch, char *nombreTag);
+
 void crear_metadata(char* path, char* nuevoPath);
 void destruir_metadata(t_metadata* meta);
 bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag);
@@ -120,9 +122,12 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag);
 char *path_Metadata(char *nombreArch, char *nombreTag);
 //void eliminar_bloq_log(t_tag *tag);
-char *buscar_bloq_logico(t_tag *tag, int nroBloqLog);
+char *obtener_path_bloq_logico(t_tag *tag, int nroBloqLog);
 char* crear_bloq_log(char* pathTag, t_metadata *meta,int nro);
 void eliminar_bloq_log (char* pathTag, int nro);
 void crear_copia_tag(char* nombreArch, t_tag *tagOrigen, char *nombreNuevoTag);
+bool tagRepetido(char *nombreArch, char *nombreTag);
+bool archRepetido(char *nombreArch);
+
 
 #endif

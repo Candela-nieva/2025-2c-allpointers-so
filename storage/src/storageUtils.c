@@ -234,7 +234,7 @@ void crear_BlocksHashIndex() {
     fclose(archBlocksHashIndex);
 }
 
-char *buscar_bloque_fisico(int nroBloque){
+char *obtener_path_bloque_fisico(int nroBloque){
     char Bloque[256];
     int anchoEntrada = calcularAncho();
     sprintf(Bloque,"%0*d", anchoEntrada, nroBloque);
@@ -276,7 +276,7 @@ void initialFile(){
     
     /*int bloqueInicial = buscar_bloque_libre();
     bitarray_set_bit(bitarray,bloqueInicial);
-    char *path_bloq = buscar_bloque_fisico(bloqueInicial);
+    char *path_bloq = obtener_path_bloque_fisico(bloqueInicial);
     FILE *bloqFis = fopen(path_bloq, "w");
     for(int i = 0; i < tam_bloq;i++){
         fputc(0,bloqFis);
@@ -443,7 +443,7 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
     int ancho = calcularAncho();
     // creo que faltan mutex de tag en esta funcion !!!!!!!!!!!
     if (bloques_nuevos > bloques_actuales) {
-        char *path_block0 = buscar_bloque_fisico(0);
+        char *path_block0 = obtener_path_bloque_fisico(0);
         for (int i = bloques_actuales; i < bloques_nuevos; i++) {
             if(!agrandarArchivo(meta, tag->pathTag, i, path_block0)) {
                 free(path_block0);
@@ -504,7 +504,7 @@ bool op_commit(char* nombreArch, char *nombreTag){
             return true; 
         }
         for(int i = 0; i < tag->logBlocks; i++){
-            char *bloqLogPath = buscar_bloq_logico(tag, i);
+            char *bloqLogPath = obtener_path_bloq_logico(tag, i);
             char *contenido = leer_contenido_bloque(bloqLogPath);
             char *hash = crypto_md5 (contenido, tam_bloq);
             free(contenido);
@@ -525,8 +525,8 @@ bool op_commit(char* nombreArch, char *nombreTag){
                     //marcar_libre_en_bitmap(bloqActual);
                     //list_remove(tag->physicalBlocks, bloqLog);
                     //list_add_in_index (tag->physicalBlocks, i, nroFis);
-                    //char *bloqALiberar = buscar_bloque_fisico(bloqActual);
-                    //char *nuevoBloq = buscar_bloque_fisico(nroFis);
+                    //char *bloqALiberar = obtener_path_bloque_fisico(bloqActual);
+                    //char *nuevoBloq = obtener_path_bloque_fisico(nroFis);
                     //unlink(bloqLog);
                     //link(bloqLog,nuevoBloq);
 
@@ -534,7 +534,7 @@ bool op_commit(char* nombreArch, char *nombreTag){
                     list_replace(tag->physicalBlocks, i, (void*)nroFis);
 
                     // Reasignar hardlink
-                    char*nuevoBloqPath = buscar_bloque_fisico(nroFis);
+                    char*nuevoBloqPath = obtener_path_bloque_fisico(nroFis);
                     // Desvincular hardlink al bloque fisico anterior
                     unlink(bloqLogPath);
                     if(link(nuevoBloqPath, bloqLogPath) == -1) {
@@ -612,7 +612,7 @@ char* leer_contenido_bloque(char* path_bloque_logico) {
 }
 
 void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id) {
-    char* path_bloque_fisico = buscar_bloque_fisico(bloque_fisico);
+    char* path_bloque_fisico = obtener_path_bloque_fisico(bloque_fisico);
     struct stat st;
     if (stat(path_bloque_fisico, &st) == 0) {
         // Si es <= 1, SÓLO el archivo físico en physical_blocks lo referencia (o ya fue eliminado).
@@ -644,8 +644,8 @@ bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido
             int bloqFis = list_get(tag->physicalBlocks, bloqLog);
             pthread_mutex_unlock(&tag->mutexTag);
             log_info(loggerStorage, "## LE CORRESPONDE EL BLOQFIS %d", bloqFis);
-            char *pathBloqFis = buscar_bloque_fisico(bloqFis);
-            char *pathBloqLog = buscar_bloq_logico(tag, bloqLog);
+            char *pathBloqFis = obtener_path_bloque_fisico(bloqFis);
+            char *pathBloqLog = obtener_path_bloq_logico(tag, bloqLog);
             log_info(loggerStorage, "## SE ESCRIBE SOBRE EL bloqLog %s", pathBloqLog);
             //buscar bloque fisico al que esta asociado el link del bloque logico
             struct stat st;
@@ -670,7 +670,7 @@ bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido
                     //list_remove(tag->physicalBlocks, bloqLog);
                     list_add_in_index(tag->physicalBlocks, bloqLog, nuevoBloqFis);
                     //actualizamos metaActual
-                    char *pathBloqFis = buscar_bloque_fisico(nuevoBloqFis);
+                    char *pathBloqFis = obtener_path_bloque_fisico(nuevoBloqFis);
                     link(pathBloqLog, pathBloqFis);
                     log_info(loggerStorage, "##<QUERY_ID> - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", nombreArch, nombreTag, bloqLog, nuevoBloqFis);
                     usleep(retardo_acceso_bloque);
@@ -695,7 +695,7 @@ bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido
 bool op_read(char* nombreArch, char *nombreTag, int nroBloque, char *contenido){
     usleep(retardo_operacion);
     t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
-    char *pathBloq = buscar_bloq_logico(tag,nroBloque);
+    char *pathBloq = obtener_path_bloq_logico(tag,nroBloque);
     if(!(contenido = leer_contenido_bloque(pathBloq))){
         log_info(loggerStorage, "##<QUERY_ID> - Bloque Lógico Leído <%s>:<%s> - Número de Bloque: <%d>",nombreArch,nombreTag,nroBloque);
         free(pathBloq);
@@ -924,7 +924,7 @@ bool tagRepetido(char *nombreArch, char *nombreTag){
 void eliminar_bloq_log(t_tag *tag){
     if(list_size(tag->logBlocks) > 0){
     int nroBloqLog = (list_size(tag->logBlocks) - 1); //representa el ultimo bloque logico
-    char *pathBlockLog  = buscar_bloq_logico(tag, nroBloqLog);
+    char *pathBlockLog  = obtener_path_bloq_logico(tag, nroBloqLog);
     log_info(loggerStorage,"Bloq Log a Eliminar= %s", pathBlockLog);
     char cmd[512];
     sprintf(cmd, "rm -rf %s",pathBlockLog);
@@ -938,7 +938,7 @@ void eliminar_bloq_log(t_tag *tag){
 */
 /*void crear_bloq_log(t_tag *tag,char *bloq_fis){
     int nroBloqLog = list_size(tag->logBlocks); //representa el siguiente bloque logico a crear
-    char *pathBlockLog  = buscar_bloq_logico(tag, nroBloqLog);
+    char *pathBlockLog  = obtener_path_bloq_logico(tag, nroBloqLog);
     log_info(loggerStorage,"Nuevo Bloq Log = %s", pathBlockLog);
     FILE *bloqL = fopen(pathBlockLog, "w+");
     ftruncate(fileno(bloqL), tam_bloq);
@@ -948,7 +948,7 @@ void eliminar_bloq_log(t_tag *tag){
     list_add(tag->logBlocks,nroBloqLog);
 }*/
 
-char *buscar_bloq_logico(t_tag *tag, int nroBloqLog){
+char *obtener_path_bloq_logico(t_tag *tag, int nroBloqLog){
     char bloqLog[256];
     sprintf(bloqLog, "%06d.dat",nroBloqLog);
     char *pathBlockLog = malloc(256);
