@@ -317,6 +317,7 @@ int calcularAncho(){
 //==========OPERACIONES==========
 
 bool op_create(char *nombreArch, char *nombreTag){
+    usleep(retardo_operacion);
     char initial[256];
     crear_directorio(path_files, nombreArch,initial);
     char tagBase[256];
@@ -368,6 +369,7 @@ t_metadata* leer_metadata(char* archivo, char* nombreTag) {
     free(path_metadata);
     return meta;
 }
+
 char* crear_bloq_log(char* pathTag, t_metadata *meta,int nro){
     /*int* cero = malloc(sizeof(int));
     *cero = 0;
@@ -425,6 +427,7 @@ void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bl
 }
 
 bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
+    usleep(retardo_operacion);
     t_metadata* meta = leer_metadata(nombreArch, nombreTag);
     if (!meta) return false;
 
@@ -474,6 +477,7 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
 }
 //cp [source] [destination]: Copy files or directories. podemos usar la funcion system para correr este comando
 bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag){
+    usleep(retardo_operacion);
     t_tag *tagOrigen = buscar_Tag_Arch(nombreArch,nombreTagOrigen);
     if(tagOrigen){
         char pathArch[256];
@@ -490,6 +494,7 @@ bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag){
 }
 
 bool op_commit(char* nombreArch, char *nombreTag){
+    usleep(retardo_operacion);
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if(tag){
         pthread_mutex_lock(&tag->mutexTag);
@@ -585,6 +590,7 @@ char* leer_contenido_bloque(char* path_bloque_logico) {
     }
 
     // Abrimos el hardlink que referencia al bloq fis
+
     FILE* arcBloque = fopen(path_bloque_logico, "r");
     if (arcBloque == NULL) {
         log_error(loggerStorage, "Error al abrir bloque lógico %s: %s", path_bloque_logico, strerror(errno));
@@ -595,7 +601,7 @@ char* leer_contenido_bloque(char* path_bloque_logico) {
     size_t bytes_leidos = fread(contenido, 1, tam_bloq, arcBloque);
     fclose(arcBloque);
 
-    // 5. Verificación opcional, pero puede servir si el archivo no está lleno
+    // Verificación opcional, pero puede servir si el archivo no está lleno
     if (bytes_leidos != tam_bloq) {
         log_warning(loggerStorage, "Lectura parcial. Leídos %zu de %d bytes en %s.", bytes_leidos, tam_bloq, path_bloque_logico);
         //Lo de zu es z por el tipo de size_t y u porque es unsigned!
@@ -627,6 +633,7 @@ void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id) {
 }
 
 bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido){
+    usleep(retardo_operacion);
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if(tag){
         if(tag->estado != COMMITED) {
@@ -666,6 +673,7 @@ bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido
                     char *pathBloqFis = buscar_bloque_fisico(nuevoBloqFis);
                     link(pathBloqLog, pathBloqFis);
                     log_info(loggerStorage, "##<QUERY_ID> - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", nombreArch, nombreTag, bloqLog, nuevoBloqFis);
+                    usleep(retardo_acceso_bloque);
                     FILE *bloqL = fopen(pathBloqFis, "r+");
                     if(!bloqL){
                         log_error(loggerStorage, "Error al abrir el bloque lógico '%s' : %s", pathBloqFis, strerror(errno));
@@ -683,6 +691,22 @@ bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido
         }
     }
 }
+
+bool op_read(char* nombreArch, char *nombreTag, int nroBloque, char *contenido){
+    usleep(retardo_operacion);
+    t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
+    char *pathBloq = buscar_bloq_logico(tag,nroBloque);
+    if(!(contenido = leer_contenido_bloque(pathBloq))){
+        log_info(loggerStorage, "##<QUERY_ID> - Bloque Lógico Leído <%s>:<%s> - Número de Bloque: <%d>",nombreArch,nombreTag,nroBloque);
+        free(pathBloq);
+        return true;
+    }else{
+        free(pathBloq);
+        return false;
+    }
+    
+}
+
 
 void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     t_fcb *arch = dictionary_get(diccionario_archivos,nombreArch);
@@ -851,8 +875,33 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
 
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
     t_fcb *fcb = dictionary_get(diccionario_archivos, Arch);
-    t_tag *tag = dictionary_get(fcb->tags, Tag);
-    return tag;
+    if(!fcb){
+        log_info(loggerStorage, "Error : Archivo No Encontrado : %s",Arch);
+        return NULL;
+    }
+        log_info(loggerStorage, "Error : Archivo No Encontrado : %s",Arch);
+        return NULL;
+    }
+        eturn tag;
+}
+
+bool archRepetido(char *nombreArch){
+    if(dictionary_has_key(diccionario_archivos,nombreArch)){
+        log_info(loggerStorage, "Error : Nombre de Archivo Repetido : %s",nombreArch);
+        return true;
+    }else{
+        return false;
+    }
+}
+
+bool tagRepetido(char *nombreArch, char *nombreTag){
+    t_fcb *fcb = dictionary_get(diccionario_archivos, nombreArch);
+    if(dictionary_has_key(fcb->tags,nombreTag)){
+        log_info(loggerStorage, "Error : Nombre de Tag Repetido : %s | %s",nombreArch, nombreTag);
+        return true;
+    }else{
+        return false;
+    }
 }
 
 /*void crear_bloq_log(t_tag *tag,char *bloq_fis){

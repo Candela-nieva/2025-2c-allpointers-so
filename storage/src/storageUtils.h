@@ -104,7 +104,7 @@ bool op_create(char *nombreArch, char *nombreTag);
 bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio);
 bool op_commit(char* nombreArch, char *nombreTag);
 bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido);
-
+bool op_read(char* nombreArch, char *nombreTag, int nroBloque, char *contenido);
 void crear_metadata(char* path, char* nuevoPath);
 void destruir_metadata(t_metadata* meta);
 bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag);
