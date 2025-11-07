@@ -22,6 +22,9 @@ t_config_storage *config_struct = NULL;
 t_config_superblock *config_superBlock = NULL;
 char* config_storage;
 t_config* configHash = NULL;
+// SEMAFOROS
+pthread_mutex_t mutex_hash_index;
+pthread_mutex_t mutex_bitmap;
 //==========INICIALIZACION==========
 
 void inicializar_config(void){
@@ -103,12 +106,17 @@ void iniciar_servidor_multihilo(void)
 
 void inicializar_montaje(){
     diccionario_archivos = dictionary_create();
-    
+    inicializar_semaforos();
     cargar_config_hashIndex();
     cargar_config_superBlock();
     freshStart();
     initialFile();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
+}
+
+void inicializar_semaforos() {
+    pthread_mutex_init(&mutex_hash_index, NULL);
+    pthread_mutex_init(&mutex_bitmap, NULL);
 }
 
 void cargar_config_hashIndex(){
@@ -345,16 +353,16 @@ t_metadata* leer_metadata(char* archivo, char* nombreTag) {
     char** array_blocks = config_get_array_value(config, "BLOCKS");
 
     meta->blocks = list_create();
-    /*for (int i = 0; array_blocks[i] != NULL; i++) {
+    for (int i = 0; array_blocks[i] != NULL; i++) {
         int* block = malloc(sizeof(int));
         *block = atoi(array_blocks[i]);
         list_add(meta->blocks, block);
-    }*/
-    for (int i = 0; array_blocks[i] != NULL; i++) {
+    }
+    /*for (int i = 0; array_blocks[i] != NULL; i++) {
         //int* block = malloc(sizeof(int));
         int block = atoi(array_blocks[i]);
         list_add(meta->blocks, block);
-    }
+    }*/
     // 7. Cerrar el config
     config_destroy(config);
     free(path_metadata);
@@ -430,10 +438,9 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
         return false;
     }
     int ancho = calcularAncho();
-
+    // creo que faltan mutex de tag en esta funcion !!!!!!!!!!!
     if (bloques_nuevos > bloques_actuales) {
         char *path_block0 = buscar_bloque_fisico(0);
-
         for (int i = bloques_actuales; i < bloques_nuevos; i++) {
             if(!agrandarArchivo(meta, tag->pathTag, i, path_block0)) {
                 free(path_block0);
@@ -448,17 +455,19 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
         free(path_block0);
     } else if (bloques_nuevos < bloques_actuales) {
         for (int i = bloques_actuales - 1; i >= bloques_nuevos; i--) {
-            int* pbloqfis = list_get(meta->blocks, i);
-            int bloque_fisico = pbloqfis ? *pbloqfis : 0;
+            int *pbloqfis = (int)list_get(meta->blocks, i);
+            int bloque_fisico = *pbloqfis;
             achicarArchivo(meta, tag->pathTag, ancho, i, bloque_fisico);
             tag->logBlocks--;
             log_info(loggerStorage, "##<QUERY_ID> - %s>:%s Se eliminó el hard link del bloque lógico %06d al bloque físico %d", nombreArch, nombreTag, i, bloque_fisico);
         }
     }
 
+    tag->tamanio = nuevoTamanio;
     meta->tamanio = nuevoTamanio;
     //guardar_metadata(meta, nombreArch, nombreTag);
     //esto se tiene que hacer recien en commit
+    // estamos seguros de esto??????????????????????
     log_info(loggerStorage, "##<QUERY_ID> - File Truncado %s:%s - Tamaño: %d", nombreArch, nombreTag, nuevoTamanio);
     destruir_metadata(meta);
     return true;
@@ -483,51 +492,138 @@ bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag){
 bool op_commit(char* nombreArch, char *nombreTag){
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if(tag){
+        pthread_mutex_lock(&tag->mutexTag);
+        if (tag->estado == COMMITED) {
+            pthread_mutex_unlock(&tag->mutexTag);
+            log_info(loggerStorage, "File:Tag %s:%s ya está COMMITED. No hay cambios", nombreArch, nombreTag);
+            return true; 
+        }
         for(int i = 0; i < tag->logBlocks; i++){
-            char *bloqLog = buscar_bloq_logico(tag, i);
-            char *hash = crypto_md5 (bloqLog, tam_bloq);
-            int bloqActual = list_get(tag->physicalBlocks,i);
+            char *bloqLogPath = buscar_bloq_logico(tag, i);
+            char *contenido = leer_contenido_bloque(bloqLogPath);
+            char *hash = crypto_md5 (contenido, tam_bloq);
+            free(contenido);
+            int bloqActual = (int)list_get(tag->physicalBlocks,i);
+            pthread_mutex_lock(&mutex_hash_index);
             if(config_has_property(configHash, hash)){
+                // CASO DE DUPLICADO ENCONTRADO
                 char *bloqFis = config_get_string_value(configHash, hash);
                 int nroFis;
                 nroFis = atoi(bloqFis + 5); //bloqFis siempre sera del mismo formato "blockNRO" por lo que a partir del 6to caracter esta el nro Fisico
                 if(bloqActual != nroFis){
-                    marcar_libre_en_bitmap(bloqActual);
+                    // Comenté esto porque estaban mal varias cosas:
+                    // 1. Marcabamos libre en bitmap sin verificar si habia otro hardlink apuntandolo
+                    // 2. list add index desplaza una posicion el bloque actual (+1). Habia que usar replace, que no desplaza, solo reeemplaza
+                    // 3. Link hardlinkea al reves los parametros, el de la izq indica al que vas a apuntar, el de la der el bloque logico
+                    // 4. Agregue mutex. El del tag quedo muy grande la SC, pero hay muchos usos intermedios.
+                    
+                    //marcar_libre_en_bitmap(bloqActual);
                     //list_remove(tag->physicalBlocks, bloqLog);
-                    list_add_in_index (tag->physicalBlocks, i, nroFis);
+                    //list_add_in_index (tag->physicalBlocks, i, nroFis);
                     //char *bloqALiberar = buscar_bloque_fisico(bloqActual);
-                    char *nuevoBloq = buscar_bloque_fisico(nroFis);
-                    unlink(bloqLog);
-                    link(bloqLog,nuevoBloq);
+                    //char *nuevoBloq = buscar_bloque_fisico(nroFis);
+                    //unlink(bloqLog);
+                    //link(bloqLog,nuevoBloq);
+
+                    //Reemplaza el número de bloque en la lista
+                    list_replace(tag->physicalBlocks, i, (void*)nroFis);
+
+                    // Reasignar hardlink
+                    char*nuevoBloqPath = buscar_bloque_fisico(nroFis);
+                    // Desvincular hardlink al bloque fisico anterior
+                    unlink(bloqLogPath);
+                    if(link(nuevoBloqPath, bloqLogPath) == -1) {
+                        log_error(loggerStorage, "Fallo al crear link canónico: %s", strerror(errno));
+                    }
+                    liberar_bloque_si_no_referenciado(bloqActual, 1/*! Pasar QUERY_ID despues !*/);
+                    free(nuevoBloqPath);
                 }
                 free(bloqFis);
             }else{
+                //CASO CONTENIDO ÚNICO
                 //Para este punto conviene que ancho y pathHash sean variable Global
                 char Bloque[256];
                 int anchoEntrada = calcularAncho();
                 sprintf(Bloque,"block%0*d", anchoEntrada, bloqActual);
                 char path_blocks_hash[256];
                 sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
-                FILE *archHash = fopen(path_blocks_hash, "w");
-                fseek(archHash, 0, SEEK_CUR);
-                char nuevaEntrada[256];
-                sprintf(nuevaEntrada, "%s=%s",hash,Bloque);
-                fputs(nuevaEntrada, archHash);
-                fclose(archHash);
-
-
+                //Abrimos en modo append (a) para no borrar
+                FILE *archHash = fopen(path_blocks_hash, "a");
+                if (archHash) {
+                    char nuevaEntrada[256];
+                    sprintf(nuevaEntrada, "%s=%s",hash,Bloque);
+                    fputs(nuevaEntrada, archHash);
+                    fclose(archHash);
+                } else {
+                    log_error(loggerStorage, "Fallo al abrir blocks_hash_index.config en modo append");
+                }
             }
-            free(bloqLog);
+            pthread_mutex_unlock(&mutex_hash_index);
+            free(bloqLogPath);
             free(hash);
         }
         tag->estado = COMMITED;
+        
         t_metadata *meta = leer_metadata(nombreArch, nombreTag);
         meta->estado = strdup("COMMITED");
         meta->blocks = list_duplicate(tag->physicalBlocks);
-        guardar_metadata(meta,nombreArch, nombreTag);
-        
+        guardar_metadata(meta, nombreArch, nombreTag);
+        destruir_metadata(meta); //elimina memory leak?
+        log_info(loggerStorage, "##%d - Commit de File:Tag %s:%s", 1/*query_id!!!!*/, nombreArch, nombreTag);
+        pthread_mutex_unlock(&tag->mutexTag);
+        return true;
     }
     return false;
+}
+
+char* leer_contenido_bloque(char* path_bloque_logico) {
+    // Reservamos memoria para el contenido del bloque
+    char* contenido = malloc(tam_bloq);
+    if (contenido == NULL) {
+        log_error(loggerStorage, "Error al reservar memoria para el contenido del bloque.");
+        return NULL;
+    }
+
+    // Abrimos el hardlink que referencia al bloq fis
+    FILE* arcBloque = fopen(path_bloque_logico, "r");
+    if (arcBloque == NULL) {
+        log_error(loggerStorage, "Error al abrir bloque lógico %s: %s", path_bloque_logico, strerror(errno));
+        free(contenido);
+        return NULL;
+    }
+
+    size_t bytes_leidos = fread(contenido, 1, tam_bloq, arcBloque);
+    fclose(arcBloque);
+
+    // 5. Verificación opcional, pero puede servir si el archivo no está lleno
+    if (bytes_leidos != tam_bloq) {
+        log_warning(loggerStorage, "Lectura parcial. Leídos %zu de %d bytes en %s.", bytes_leidos, tam_bloq, path_bloque_logico);
+        //Lo de zu es z por el tipo de size_t y u porque es unsigned!
+        // Rellenamos el resto del buffer con ceros
+        memset(contenido + bytes_leidos, 0, tam_bloq - bytes_leidos);
+    }
+    return contenido;
+}
+
+void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id) {
+    char* path_bloque_fisico = buscar_bloque_fisico(bloque_fisico);
+    struct stat st;
+    if (stat(path_bloque_fisico, &st) == 0) {
+        // Si es <= 1, SÓLO el archivo físico en physical_blocks lo referencia (o ya fue eliminado).
+        if (st.st_nlink <= 1) { 
+            pthread_mutex_lock(&mutex_bitmap);
+            marcar_libre_en_bitmap(bloque_fisico);
+            pthread_mutex_unlock(&mutex_bitmap);
+            
+            //OPCIONAL: Podríamos no crear todos los bloques fisicos
+            //al inicio porque ocupamos mucha memoria, e irlos creando
+            //a medida que los piden? En ese caso:
+            //unlink(path_bloque_fisico)
+
+            log_info(loggerStorage, "##%d - Bloque Físico Liberado - Número de Bloque: %d", query_id, bloque_fisico);
+        }
+    }
+    free(path_bloque_fisico);
 }
 
 bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido){
@@ -541,7 +637,7 @@ bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido
             int bloqFis = list_get(tag->physicalBlocks, bloqLog);
             pthread_mutex_unlock(&tag->mutexTag);
             log_info(loggerStorage, "## LE CORRESPONDE EL BLOQFIS %d", bloqFis);
-            char * pathBloqFis = buscar_bloque_fisico(bloqFis);
+            char *pathBloqFis = buscar_bloque_fisico(bloqFis);
             char *pathBloqLog = buscar_bloq_logico(tag, bloqLog);
             log_info(loggerStorage, "## SE ESCRIBE SOBRE EL bloqLog %s", pathBloqLog);
             //buscar bloque fisico al que esta asociado el link del bloque logico
@@ -567,7 +663,7 @@ bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido
                     //list_remove(tag->physicalBlocks, bloqLog);
                     list_add_in_index(tag->physicalBlocks, bloqLog, nuevoBloqFis);
                     //actualizamos metaActual
-                    char * pathBloqFis = buscar_bloque_fisico(nuevoBloqFis);
+                    char *pathBloqFis = buscar_bloque_fisico(nuevoBloqFis);
                     link(pathBloqLog, pathBloqFis);
                     log_info(loggerStorage, "##<QUERY_ID> - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", nombreArch, nombreTag, bloqLog, nuevoBloqFis);
                     FILE *bloqL = fopen(pathBloqFis, "r+");
@@ -693,8 +789,8 @@ void destruir_metadata(t_metadata* meta) {
         free(meta->estado);
     if (meta->blocks) {
         //void liberar_int(void* x) { free(x); }
-        //list_destroy_and_destroy_elements(meta->blocks, liberar_int);
-        list_destroy (meta->blocks);
+        list_destroy_and_destroy_elements(meta->blocks, free);
+        //list_destroy (meta->blocks);
     }
     free(meta);
 }

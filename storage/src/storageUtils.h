@@ -81,6 +81,7 @@ void cargar_config_superBlock();
 void freshStart();
 void verificar_freshStart();
 void formateo();
+void inicializar_semaforos();
 //==========ELIMINACION Y CREACION DE ESTRUCTURAS==========
 void limpiar_fs();
 void recrear_fs();
@@ -111,6 +112,8 @@ t_metadata* leer_metadata(char* archivo, char* nombreTag);
 void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag);
 bool agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0);
 void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico);
+char* leer_contenido_bloque(char* path_bloque_logico);
+void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id);
 //============================= FCB Y TAGS ==================================
 t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag);
 t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionarioTagsArch);
@@ -121,4 +124,5 @@ char *buscar_bloq_logico(t_tag *tag, int nroBloqLog);
 char* crear_bloq_log(char* pathTag, t_metadata *meta,int nro);
 void eliminar_bloq_log (char* pathTag, int nro);
 void crear_copia_tag(char* nombreArch, t_tag *tagOrigen, char *nombreNuevoTag);
+
 #endif
