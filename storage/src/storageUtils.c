@@ -271,7 +271,7 @@ void initialFile(){
     //marcar_ocupado_en_bitmap(0);
     op_write("initial_file","BASE", 0, "hOla, me llamo Rusell y soy un guia explorador");
     op_commit("initial_file","BASE");
-
+    op_delete("initial_file","BASE");
     //op_tag("initial_file","BASE","BASE2");
     
     /*int bloqueInicial = buscar_bloque_libre();
@@ -707,6 +707,32 @@ bool op_read(char* nombreArch, char *nombreTag, int nroBloque, char *contenido){
     
 }
 
+bool op_delete(char* nombreArch, char *nombreTag){
+    usleep(retardo_operacion);
+    t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
+    if(!tag){
+        return false;
+    }
+    for(int i = 0; i < tag->logBlocks; i++){
+        int bloqFis = list_get(tag->physicalBlocks,i);
+        liberar_bloque_si_no_referenciado(bloqFis, 0);
+    }
+    log_info(loggerStorage, "Path a borrar : %s",tag->pathTag);
+    char cmd[256];
+    sprintf(cmd,"rm -rf %s",tag->pathTag);
+    log_info(loggerStorage, "comando : %s",cmd);
+    system(cmd);
+}
+
+void eliminarStructTag(char* nombreArch, char *nombreTag){
+    t_fcb *fcb = dictionary_get(diccionario_archivos,nombreArch);
+    t_tag *tag = dictionary_remove(fcb->tags,nombreArch);
+    free(tag->nombreTag);
+    free(tag->pathTag);
+    pthread_mutex_destroy(&tag->mutexTag);
+    list_destroy_and_destroy_elements(tag->physicalBlocks, free);
+    free(tag);
+}   
 
 void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     t_fcb *arch = dictionary_get(diccionario_archivos,nombreArch);
@@ -869,6 +895,7 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
     tag->physicalBlocks = list_create();
     tag->logBlocks = 0;
     tag->estado = WORK_IN_PROGRESS;
+    pthread_mutex_init(&tag->mutexTag, NULL);
     dictionary_put(diccionarioTagsArch, tag->nombreTag, tag);
     return tag;
 }
@@ -879,10 +906,8 @@ t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
         log_info(loggerStorage, "Error : Archivo No Encontrado : %s",Arch);
         return NULL;
     }
-        log_info(loggerStorage, "Error : Archivo No Encontrado : %s",Arch);
-        return NULL;
-    }
-        eturn tag;
+    t_tag *tag = dictionary_get(fcb->tags, Tag);
+    return tag;
 }
 
 bool archRepetido(char *nombreArch){
