@@ -73,7 +73,15 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 
 //==========CONEXIONES==========
 void iniciar_servidor_multihilo(void);
-
+//==========ATENDER PETICIONES WORKER============
+void atenderCreate(int fd_conexion);
+void atenderTruncate(int fd_conexion);
+void atenderTag(int fd_conexion);
+void atenderCommit(int fd_conexion);
+void atenderWrite(int fd_conexion);
+void atenderRead(int fd_conexion);
+void atenderDelete(int fd_conexion);
+void recibir_QID_nombreArch_nombreTag(int fd,int QID, char*nombreArch,char *nombreTag);
 //==========FRESH_START==========
 void inicializar_montaje();
 void cargar_config_hashIndex();
@@ -100,12 +108,12 @@ void marcar_ocupado_en_bitmap(int nro_fisico);
 //==========FORMATO DE ENTRADAS==========
 int calcularAncho();
 //==========OPERACIONES==========
-bool op_create(char *nombreArch, char *nombreTag);
-bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio);
-bool op_commit(char* nombreArch, char *nombreTag);
-bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido);
-bool op_read(char* nombreArch, char *nombreTag, int nroBloque, char *contenido);
-bool op_delete(char* nombreArch, char *nombreTag);
+bool op_create(char *nombreArch, char *nombreTag, int query_id);
+bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id);
+bool op_commit(char* nombreArch, char *nombreTag, int query_id);
+bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido, int query_id);
+bool op_read(char* nombreArch, char *nombreTag, int nroBloque, char *contenido, int query_id);
+bool op_delete(char* nombreArch, char *nombreTag, int query_id);
 
 void crear_metadata(char* path, char* nuevoPath);
 void destruir_metadata(t_metadata* meta);

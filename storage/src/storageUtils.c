@@ -79,8 +79,9 @@ void iniciar_servidor_multihilo(void)
     int fd_sv = crear_servidor(config_struct->puerto_escucha);
     log_info(loggerStorage, "Servidor STORAGE escuchando en puerto %s", config_struct->puerto_escucha);
     while (1)
-    {
-        int fd_conexion = esperar_cliente(fd_sv, "STORAGE", loggerStorage);
+    {   
+        int *fd_conexion = malloc(sizeof(int));
+        *fd_conexion = esperar_cliente(fd_sv, "STORAGE", loggerStorage);
         int operacion = recibir_operacion(fd_conexion);
         if(operacion == HANDSHAKE_WORKER){
             log_info(loggerStorage, "Conexion Exitosa con un nuevo Worker, ENVIANDO TAMANIO BLOQUE : %d", tam_bloq);
@@ -88,10 +89,10 @@ void iniciar_servidor_multihilo(void)
             agregar_a_paquete(paquete, &tam_bloq, sizeof(int));
             enviar_paquete(paquete, fd_conexion);
             eliminar_paquete(paquete);
-            close(fd_conexion); // NUEVO: cierro si no voy a atender más
-            //pthread_t hilo_worker;
-            //pthread_create(&hilo_worker, NULL, atender_conexion, NULL);
-            //pthread_detach(hilo_worker);
+            //close(fd_conexion); // NUEVO: cierro si no voy a atender más
+            pthread_t hilo_worker;
+            pthread_create(&hilo_worker, NULL, atender_worker, (fd_conexion));
+            pthread_detach(hilo_worker);
         }else{
             log_info(loggerStorage, "Operacion desconocida. Cerrando conexion.");
             close(fd_conexion);
@@ -102,7 +103,131 @@ void iniciar_servidor_multihilo(void)
     return;
 }
 
-//==========FRESH_START==========
+void* atender_worker(void arg){
+    int fd = *(int*)arg;
+    //int qid;
+    free(arg);
+    while (1)
+    {
+        tipo_instruccion inst = recibir_operacion(fd);
+        switch(inst){
+            case CREATE:
+                
+                break;
+            case TRUNCATE:
+
+                break;
+            case TAG:
+
+                break;
+            case COMMIT:
+
+                break;
+            case WRITE:
+
+                break;
+            case READ:
+
+                break;
+            case DELETE:
+
+                break;
+            default:
+                log_info(loggerStorage,"Fallo : Operacion Desconocida");
+                break;
+        }
+    }
+    // Nunca llega acá
+    close(fd_sv);
+    return;
+}
+
+//========== CASOS DE ATENCION ==========
+
+void atenderCreate(int fd_conexion){
+    int offset = 0;
+    int QID;
+    char *nombreArch, nombreTag;
+    void *buffer = recibir_buffer(fd);
+    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+
+    free(buffer);
+    op_create(nombreArch,nombreTag, QID);
+}
+void atenderTruncate(int fd_conexion){
+    int offset = 0;
+    int QID, nuevoTam;
+    char *nombreArch, nombreTag;
+    void *buffer = recibir_buffer(fd);
+    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    memcpy(&nuevoTam,buffer + offset, sizeof(int));
+    free(buffer);
+}
+void atenderTag(int fd_conexion){
+    int offset = 0;
+    int QID;
+    char *nombreArch, nombreTag;
+    void *buffer = recibir_buffer(fd);
+    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    free(buffer);
+ 
+}
+void atenderCommit(int fd_conexion){
+    int offset = 0;
+    int QID;
+    char *nombreArch, nombreTag;
+    void *buffer = recibir_buffer(fd);
+    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    free(buffer);
+}
+void atenderWrite(int fd_conexion){
+    int offset = 0;
+    int QID, base;
+    char *nombreArch, nombreTag;
+    void *buffer = recibir_buffer(fd);
+    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    memcpy(&base,buffer + offset, sizeof(int));
+    free(buffer);
+     
+}
+void atenderRead(int fd_conexion){
+    int offset = 0;
+    int QID, nroBloq;
+    char *nombreArch, nombreTag;
+    void *buffer = recibir_buffer(fd);
+    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    memcpy(&nroBloq,buffer + offset, sizeof(int));
+    free(buffer);
+    
+}
+void atenderDelete(int fd_conexion){
+    int offset = 0;
+    int QID;
+    char *nombreArch, nombreTag;
+    void *buffer = recibir_buffer(fd);
+    recibir_QID_nombreArch_nombreTag(fd_conexion,QID, nombreArch, nombreTag,&offset);
+    free(buffer);
+    
+}
+
+void recibir_QID_nombreArch_nombreTag(void *buffer,int fd,int QID, char*nombreArch,char *nombreTag, int *offset){
+    int archLen, tagLen;
+    memcpy(&QID, buffer + *offset, sizeof(int));
+    *offset += sizeof(int);
+    memcpy(&archLen, buffer + *offset, sizeof(int));
+    *offset += sizeof(int);
+    nombreArch = malloc(archLen + 1);
+    memcpy(nombreArch,buffer + *offset, archLen);
+    nombreArch[archLen] = '\0';
+    *offset += archLen;
+    memcpy(&tagLen, buffer + *offset, sizeof(int));
+    *offset += sizeof(int);
+    nombreTag = malloc(tagLen + 1);
+    memcpy(nombreTag, buffer + *offset, tagLen);
+    nombreTag[tagLen] = '\0';
+    *offset += tagLen;
+}
+//========== FRESH_START ==========
 
 void inicializar_montaje(){
     diccionario_archivos = dictionary_create();
@@ -316,17 +441,26 @@ int calcularAncho(){
 
 //==========OPERACIONES==========
 
-bool op_create(char *nombreArch, char *nombreTag){
+bool op_create(char *nombreArch, char *nombreTag, int query_id){
     usleep(retardo_operacion);
+    if(archRepetido(nombreArch)){
+        log_info(loggerStorage, "Fallo : File preexistente %s:%s", nombreArch, nombreTag);
+        return false;
+    }
+    if(tagRepetido(nombreArch,nombreTag)){
+        log_info(loggerStorage, "Fallo : Tag preexistente %s:%s", nombreArch, nombreTag);
+        return false;
+    }
     char initial[256];
-    crear_directorio(path_files, nombreArch,initial);
+    crear_directorio(path_files, nombreArch, initial);
+    log_info(loggerStorage, "##<%d> - File Creado %s:%s", query_id, nombreArch, nombreTag);
     char tagBase[256];
     crear_directorio(initial, nombreTag, tagBase);
     crear_metadata(tagBase,NULL);
     char logicalBlocks[256];
     crear_directorio(tagBase, "logical_blocks", logicalBlocks);
     crear_fcb(nombreArch, nombreTag);
-
+    log_info(loggerStorage, "##<%d> - Tag Creado %s:%s", query_id, nombreArch, nombreTag);
     return true;
 }
 
@@ -426,7 +560,7 @@ void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bl
         free(pfis);
 }
 
-bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
+bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id) {
     usleep(retardo_operacion);
     t_metadata* meta = leer_metadata(nombreArch, nombreTag);
     if (!meta) return false;
@@ -476,7 +610,7 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio) {
     return true;
 }
 //cp [source] [destination]: Copy files or directories. podemos usar la funcion system para correr este comando
-bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag){
+bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int query_id){
     usleep(retardo_operacion);
     t_tag *tagOrigen = buscar_Tag_Arch(nombreArch,nombreTagOrigen);
     if(tagOrigen){

@@ -26,7 +26,7 @@ typedef struct {
     char* log_level;
 } t_config_worker;
 
-typedef enum {
+/*typedef enum {
     CREATE,
     TRUNCATE,
     WRITE,
@@ -37,7 +37,7 @@ typedef enum {
     DELETE,
     END,
     DESCONOCIDA // Para cualquier instrucción no reconocida
-} tipo_instruccion;
+} tipo_instruccion;*/
 
 // ============== Memoria Interna ================
 typedef struct {

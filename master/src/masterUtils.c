@@ -543,7 +543,7 @@ void planificador_fifo(){
 
 void planificador_prioridades(){
     //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
-     log_info(loggerMaster,"TAMAÑO INICIAL DE LISTA %d", list_size(cola_ready));
+    log_info(loggerMaster,"TAMAÑO INICIAL DE LISTA %d", list_size(cola_ready));
     for(int i = 0; i < list_size(cola_ready);i++){
         t_qcb *q = list_get(cola_ready,0);
         log_info(loggerMaster,"id %d", q->qid);

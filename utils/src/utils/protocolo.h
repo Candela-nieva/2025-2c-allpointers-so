@@ -46,6 +46,19 @@ typedef enum{
     DESALOJO   // Mensaje que se le manda a worker
 } op_code;
 
+typedef enum {
+    CREATE,
+    TRUNCATE,
+    WRITE,
+    READ,
+    TAG,
+    COMMIT,
+    FLUSH,
+    DELETE,
+    END,
+    DESCONOCIDA // Para cualquier instrucción no reconocida
+} tipo_instruccion;
+
 void saludar(char* quien);
 t_paquete *crear_paquete(op_code operacion);
 void destruir_buffer(t_buffer *buffer);
