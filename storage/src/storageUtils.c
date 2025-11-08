@@ -103,16 +103,25 @@ void iniciar_servidor_multihilo(void)
     return;
 }
 
-void* atender_worker(void arg){
+void* atender_worker(void* arg){
     int fd = *(int*)arg;
     //int qid;
     free(arg);
     while (1)
     {
         tipo_instruccion inst = recibir_operacion(fd);
+        if(inst <= 0) {
+            log_info(loggerStorage,"Worker desconectado - FD: %d", fd);
+            close(fd);
+            return NULL;
+        }
+        void* buffer = recibir_buffer(fd);
+        if(buffer == NULL)
+            continue;
+        //agregue esto porque me parecio copado jeje
         switch(inst){
             case CREATE:
-                
+                atenderCreate(fd, buffer);
                 break;
             case TRUNCATE:
 
@@ -138,94 +147,115 @@ void* atender_worker(void arg){
         }
     }
     // Nunca llega acá
-    close(fd_sv);
+    close(fd);
     return;
 }
 
 //========== CASOS DE ATENCION ==========
 
-void atenderCreate(int fd_conexion){
-    int offset = 0;
+void atenderCreate(int fd_conexion, void* buffer){
     int QID;
     char *nombreArch, nombreTag;
-    void *buffer = recibir_buffer(fd);
-    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    recibir_QID_nombreArch_nombreTag(buffer, &QID, &nombreArch, &nombreTag);
 
+    t_resultado_storage resultado = op_create(nombreArch, nombreTag, QID);
     free(buffer);
-    op_create(nombreArch,nombreTag, QID);
+
+    if(nombreArch)
+        free(nombreArch);
+    if(nombreTag)
+        free(nombreTag);
 }
-void atenderTruncate(int fd_conexion){
-    int offset = 0;
+void atenderTruncate(int fd_conexion, void* buffer){
     int QID, nuevoTam;
     char *nombreArch, nombreTag;
-    void *buffer = recibir_buffer(fd);
-    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
-    memcpy(&nuevoTam,buffer + offset, sizeof(int));
+
+    int offset = recibir_QID_nombreArch_nombreTag(buffer, &QID, &nombreArch, &nombreTag);
+    
+    memcpy(&nuevoTam, buffer + offset, sizeof(int));
+
+    t_resultado_storage resultado = op_truncate(nombreArch, nombreTag, nuevoTam, QID);
+
     free(buffer);
+    if(nombreArch)
+        free(nombreArch);
+    if(nombreTag)
+        free(nombreTag);
 }
-void atenderTag(int fd_conexion){
+
+void atenderTag(int fd_conexion, void* buffer){
     int offset = 0;
     int QID;
     char *nombreArch, nombreTag;
-    void *buffer = recibir_buffer(fd);
-    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    //void *buffer = recibir_buffer(fd);
+    //recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
     free(buffer);
- 
 }
-void atenderCommit(int fd_conexion){
+
+void atenderCommit(int fd_conexion, void* buffer){
     int offset = 0;
     int QID;
     char *nombreArch, nombreTag;
-    void *buffer = recibir_buffer(fd);
-    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    //void *buffer = recibir_buffer(fd);
+    //recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
     free(buffer);
 }
-void atenderWrite(int fd_conexion){
+
+void atenderWrite(int fd_conexion, void* buffer){
     int offset = 0;
     int QID, base;
     char *nombreArch, nombreTag;
-    void *buffer = recibir_buffer(fd);
-    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    //void *buffer = recibir_buffer(fd);
+    //recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
     memcpy(&base,buffer + offset, sizeof(int));
     free(buffer);
-     
 }
-void atenderRead(int fd_conexion){
+
+void atenderRead(int fd_conexion, void* buffer){
     int offset = 0;
     int QID, nroBloq;
     char *nombreArch, nombreTag;
-    void *buffer = recibir_buffer(fd);
-    recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
+    //void *buffer = recibir_buffer(fd);
+    //recibir_QID_nombreArch_nombreTag(QID, nombreArch, nombreTag);
     memcpy(&nroBloq,buffer + offset, sizeof(int));
     free(buffer);
-    
 }
-void atenderDelete(int fd_conexion){
+
+void atenderDelete(int fd_conexion, void* buffer){
     int offset = 0;
     int QID;
     char *nombreArch, nombreTag;
-    void *buffer = recibir_buffer(fd);
-    recibir_QID_nombreArch_nombreTag(fd_conexion,QID, nombreArch, nombreTag,&offset);
+    //void *buffer = recibir_buffer(fd_conexion);
+    //recibir_QID_nombreArch_nombreTag(fd_conexion,QID, nombreArch, nombreTag);
     free(buffer);
-    
 }
 
-void recibir_QID_nombreArch_nombreTag(void *buffer,int fd,int QID, char*nombreArch,char *nombreTag, int *offset){
+int recibir_QID_nombreArch_nombreTag(void* buffer, int* QID, char** nombreArch,char** nombreTag){
     int archLen, tagLen;
-    memcpy(&QID, buffer + *offset, sizeof(int));
-    *offset += sizeof(int);
-    memcpy(&archLen, buffer + *offset, sizeof(int));
-    *offset += sizeof(int);
-    nombreArch = malloc(archLen + 1);
-    memcpy(nombreArch,buffer + *offset, archLen);
-    nombreArch[archLen] = '\0';
-    *offset += archLen;
-    memcpy(&tagLen, buffer + *offset, sizeof(int));
-    *offset += sizeof(int);
-    nombreTag = malloc(tagLen + 1);
-    memcpy(nombreTag, buffer + *offset, tagLen);
-    nombreTag[tagLen] = '\0';
-    *offset += tagLen;
+    int offset = 0;
+
+    memcpy(QID, buffer + offset, sizeof(int));
+    offset += sizeof(int);
+
+    memcpy(&archLen, buffer + offset, sizeof(int));
+    offset += sizeof(int);
+
+    *nombreArch = malloc(archLen + 1);
+    memcpy(*nombreArch,buffer + offset, archLen);
+    (*nombreArch)[archLen] = '\0';
+    offset += archLen;
+
+    memcpy(&tagLen, buffer + offset, sizeof(int));
+    offset += sizeof(int);
+
+    *nombreTag = malloc(tagLen + 1);
+    memcpy(*nombreTag, buffer + offset, tagLen);
+    (*nombreTag)[tagLen] = '\0';
+    offset += tagLen;
+
+    // Devolvemos el offset final para que el buffer
+    // restante pueda ser leído
+    return offset;
 }
 //========== FRESH_START ==========
 
@@ -391,12 +421,12 @@ void crear_physical_blocks() {
 }
 
 void initialFile(){
-    op_create("initial_file","BASE");
-    op_truncate("initial_file","BASE",tam_bloq);
+    op_create("initial_file","BASE", 0);
+    op_truncate("initial_file","BASE",tam_bloq, 0);
     //marcar_ocupado_en_bitmap(0);
-    op_write("initial_file","BASE", 0, "hOla, me llamo Rusell y soy un guia explorador");
-    op_commit("initial_file","BASE");
-    op_delete("initial_file","BASE");
+    op_write("initial_file","BASE", 0, "hOla, me llamo Rusell y soy un guia explorador", 0);
+    op_commit("initial_file","BASE", 0);
+    op_delete("initial_file","BASE", 0);
     //op_tag("initial_file","BASE","BASE2");
     
     /*int bloqueInicial = buscar_bloque_libre();
@@ -410,10 +440,10 @@ void initialFile(){
 }
 
 //==========BITMAP==========
-int buscar_bloque_libre(){
+int buscar_bloque_libre(int query_id){
     for(int i = 0; i < cantBloq; i++){
         if(bitarray_test_bit(bitarray, i)==0){
-            log_info(loggerStorage, "BLOQUE LIBRE ENCONTRADO %d",i);
+            log_info(loggerStorage, "##%d - Bloque Físico Reservado - Número de Bloque: %d", query_id, i);
             marcar_ocupado_en_bitmap(i);
             return i;
         }
@@ -441,27 +471,27 @@ int calcularAncho(){
 
 //==========OPERACIONES==========
 
-bool op_create(char *nombreArch, char *nombreTag, int query_id){
+t_resultado_storage op_create(char *nombreArch, char *nombreTag, int query_id){
     usleep(retardo_operacion);
     if(archRepetido(nombreArch)){
         log_info(loggerStorage, "Fallo : File preexistente %s:%s", nombreArch, nombreTag);
-        return false;
+        return ERROR_FILE_PREEXISTENTE;
     }
     if(tagRepetido(nombreArch,nombreTag)){
         log_info(loggerStorage, "Fallo : Tag preexistente %s:%s", nombreArch, nombreTag);
-        return false;
+        return ERROR_TAG_PREEXISTENTE;
     }
     char initial[256];
     crear_directorio(path_files, nombreArch, initial);
-    log_info(loggerStorage, "##<%d> - File Creado %s:%s", query_id, nombreArch, nombreTag);
+    log_info(loggerStorage, "##%d - File Creado %s:%s", query_id, nombreArch, nombreTag);
     char tagBase[256];
     crear_directorio(initial, nombreTag, tagBase);
     crear_metadata(tagBase,NULL);
     char logicalBlocks[256];
     crear_directorio(tagBase, "logical_blocks", logicalBlocks);
     crear_fcb(nombreArch, nombreTag);
-    log_info(loggerStorage, "##<%d> - Tag Creado %s:%s", query_id, nombreArch, nombreTag);
-    return true;
+    log_info(loggerStorage, "##%d - Tag Creado %s:%s", query_id, nombreArch, nombreTag);
+    return RESULTADO_OK;
 }
 
 t_metadata* leer_metadata(char* archivo, char* nombreTag) {
@@ -518,15 +548,15 @@ char* crear_bloq_log(char* pathTag, t_metadata *meta,int nro){
     return path_logical;
 }
 
-bool agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0) {
+t_resultado_storage agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0) {
     char *path_logical = crear_bloq_log(pathTag, meta, nro);
         if (link(path_block0, path_logical) == -1) {
             log_error(loggerStorage, "Link a block0 falló: %s", strerror(errno));
             destruir_metadata(meta);
-            return false;
+            return ERROR_LINK_FALLIDO;
         }
     free(path_logical);
-    return true;
+    return RESULTADO_OK;
 }
 
 void eliminar_bloq_log (char* pathTag, int nro) {
@@ -560,10 +590,10 @@ void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bl
         free(pfis);
 }
 
-bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id) {
+t_resultado_storage op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id) {
     usleep(retardo_operacion);
     t_metadata* meta = leer_metadata(nombreArch, nombreTag);
-    if (!meta) return false;
+    if (!meta) return ERROR_FILE_INEXISTENTE;
 
     int bloques_actuales = meta->tamanio / tam_bloq;
     int bloques_nuevos = nuevoTamanio / tam_bloq;
@@ -572,22 +602,22 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_
     if (!tag) {
         log_error(loggerStorage, "Tag no encontrado %s:%s", nombreArch, nombreTag);
         destruir_metadata(meta);
-        return false;
+        return ERROR_TAG_INEXISTENTE;
     }
     int ancho = calcularAncho();
     // creo que faltan mutex de tag en esta funcion !!!!!!!!!!!
     if (bloques_nuevos > bloques_actuales) {
         char *path_block0 = obtener_path_bloque_fisico(0);
         for (int i = bloques_actuales; i < bloques_nuevos; i++) {
-            if(!agrandarArchivo(meta, tag->pathTag, i, path_block0)) {
+            if(agrandarArchivo(meta, tag->pathTag, i, path_block0) != RESULTADO_OK) {
                 free(path_block0);
                 destruir_metadata(meta);
-                return false;
+                return ERROR_TRUNCATE_FALLIDO;
             }
             tag->logBlocks++;
             //list_add(tag->physicalBlocks, (void*)0); //decimos que tiene asociado el bloque 0
             list_add(tag->physicalBlocks, 0);
-            log_info(loggerStorage, "##<QUERY_ID> - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico 0", nombreArch, nombreTag, i);
+            log_info(loggerStorage, "##%d - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico 0", query_id, nombreArch, nombreTag, i);
         }
         free(path_block0);
     } else if (bloques_nuevos < bloques_actuales) {
@@ -596,21 +626,20 @@ bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_
             int bloque_fisico = *pbloqfis;
             achicarArchivo(meta, tag->pathTag, ancho, i, bloque_fisico);
             tag->logBlocks--;
-            log_info(loggerStorage, "##<QUERY_ID> - %s>:%s Se eliminó el hard link del bloque lógico %06d al bloque físico %d", nombreArch, nombreTag, i, bloque_fisico);
+            log_info(loggerStorage, "##%d - %s:%s Se eliminó el hard link del bloque lógico %06d al bloque físico %d", query_id, nombreArch, nombreTag, i, bloque_fisico);
         }
     }
 
     tag->tamanio = nuevoTamanio;
     meta->tamanio = nuevoTamanio;
     //guardar_metadata(meta, nombreArch, nombreTag);
-    //esto se tiene que hacer recien en commit
-    // estamos seguros de esto??????????????????????
-    log_info(loggerStorage, "##<QUERY_ID> - File Truncado %s:%s - Tamaño: %d", nombreArch, nombreTag, nuevoTamanio);
+    //esto se tiene que hacer recien en commit ??????????????????????
+    log_info(loggerStorage, "##%d - File Truncado %s:%s - Tamaño: %d", query_id, nombreArch, nombreTag, nuevoTamanio);
     destruir_metadata(meta);
-    return true;
+    return RESULTADO_OK;
 }
 //cp [source] [destination]: Copy files or directories. podemos usar la funcion system para correr este comando
-bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int query_id){
+t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int query_id){
     usleep(retardo_operacion);
     t_tag *tagOrigen = buscar_Tag_Arch(nombreArch,nombreTagOrigen);
     if(tagOrigen){
@@ -622,12 +651,12 @@ bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int q
         log_info(loggerStorage, "comando : %s",cmd);
         system(cmd);
         crear_copia_tag(nombreArch,tagOrigen,nombreNuevoTag);
-        return true;
+        return RESULTADO_OK;
     }
-    return false;
+    return ERROR_TAG_INEXISTENTE;
 }
 
-bool op_commit(char* nombreArch, char *nombreTag){
+t_resultado_storage op_commit(char* nombreArch, char *nombreTag, int query_id){
     usleep(retardo_operacion);
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if(tag){
@@ -635,7 +664,7 @@ bool op_commit(char* nombreArch, char *nombreTag){
         if (tag->estado == COMMITED) {
             pthread_mutex_unlock(&tag->mutexTag);
             log_info(loggerStorage, "File:Tag %s:%s ya está COMMITED. No hay cambios", nombreArch, nombreTag);
-            return true; 
+            return ERROR_ESCRITURA_NO_PERMITIDA; 
         }
         for(int i = 0; i < tag->logBlocks; i++){
             char *bloqLogPath = obtener_path_bloq_logico(tag, i);
@@ -674,7 +703,8 @@ bool op_commit(char* nombreArch, char *nombreTag){
                     if(link(nuevoBloqPath, bloqLogPath) == -1) {
                         log_error(loggerStorage, "Fallo al crear link canónico: %s", strerror(errno));
                     }
-                    liberar_bloque_si_no_referenciado(bloqActual, 1/*! Pasar QUERY_ID despues !*/);
+                    log_info(loggerStorage, "##%d - %s : %s Bloque Lógico %06d se reasigna de %d a %d", query_id, nombreArch, nombreTag, i, bloqActual, nroFis);
+                    liberar_bloque_si_no_referenciado(bloqActual, query_id);
                     free(nuevoBloqPath);
                 }
                 free(bloqFis);
@@ -710,13 +740,14 @@ bool op_commit(char* nombreArch, char *nombreTag){
         destruir_metadata(meta); //elimina memory leak?
         log_info(loggerStorage, "##%d - Commit de File:Tag %s:%s", 1/*query_id!!!!*/, nombreArch, nombreTag);
         pthread_mutex_unlock(&tag->mutexTag);
-        return true;
+        return RESULTADO_OK;
     }
-    return false;
+    return ERROR_TAG_INEXISTENTE;
 }
 
 char* leer_contenido_bloque(char* path_bloque_logico) {
     // Reservamos memoria para el contenido del bloque
+    usleep(retardo_acceso_bloque);
     char* contenido = malloc(tam_bloq);
     if (contenido == NULL) {
         log_error(loggerStorage, "Error al reservar memoria para el contenido del bloque.");
@@ -731,7 +762,6 @@ char* leer_contenido_bloque(char* path_bloque_logico) {
         free(contenido);
         return NULL;
     }
-
     size_t bytes_leidos = fread(contenido, 1, tam_bloq, arcBloque);
     fclose(arcBloque);
 
@@ -766,7 +796,7 @@ void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id) {
     free(path_bloque_fisico);
 }
 
-bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido){
+t_resultado_storage op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido, int query_id){
     usleep(retardo_operacion);
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if(tag){
@@ -789,36 +819,36 @@ bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido
                     FILE *bloqL = fopen(pathBloqLog, "r+");
                     if(!bloqL){
                         log_error(loggerStorage, "Error al abrir el bloque lógico '%s' : %s", pathBloqLog, strerror(errno));
-                        return false;
+                        return ERROR_NO_PUDO_ABRIR_ARCHIVO;
                     }
                     fseek(bloqL, offset, SEEK_SET);
                     fwrite(contenido, 1, strlen(contenido), bloqL);
                     fclose(bloqL);
                     free(pathBloqLog);
-                    return true;
+                    return RESULTADO_OK;
                 }else{
                     unlink(pathBloqLog);
                     //marcar_libre_en_bitmap(bloqFis);
                     //repensar esto
-                    int nuevoBloqFis = buscar_bloque_libre();
+                    int nuevoBloqFis = buscar_bloque_libre(query_id);
                     //list_remove(tag->physicalBlocks, bloqLog);
                     list_add_in_index(tag->physicalBlocks, bloqLog, nuevoBloqFis);
                     //actualizamos metaActual
                     char *pathBloqFis = obtener_path_bloque_fisico(nuevoBloqFis);
                     link(pathBloqLog, pathBloqFis);
-                    log_info(loggerStorage, "##<QUERY_ID> - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", nombreArch, nombreTag, bloqLog, nuevoBloqFis);
+                    log_info(loggerStorage, "##%d - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", query_id, nombreArch, nombreTag, bloqLog, nuevoBloqFis);
                     usleep(retardo_acceso_bloque);
                     FILE *bloqL = fopen(pathBloqFis, "r+");
                     if(!bloqL){
                         log_error(loggerStorage, "Error al abrir el bloque lógico '%s' : %s", pathBloqFis, strerror(errno));
-                        return false;
+                        return ERROR_NO_PUDO_ABRIR_ARCHIVO;
                     }
                     fseek(bloqL, offset, SEEK_SET);
                     fwrite(contenido, 1, strlen(contenido), bloqL);
                     fclose(bloqL);
                     free(pathBloqLog);
                     free(pathBloqFis);
-                    return true;
+                    return RESULTADO_OK;
                     //faltan frees y falta mejor implementacion de bloques logicos
                 }
             }
@@ -826,26 +856,27 @@ bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido
     }
 }
 
-bool op_read(char* nombreArch, char *nombreTag, int nroBloque, char *contenido){
+t_resultado_storage op_read(char* nombreArch, char *nombreTag, int nroBloque, char **contenido, int query_id){
     usleep(retardo_operacion);
     t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
     char *pathBloq = obtener_path_bloq_logico(tag,nroBloque);
-    if(!(contenido = leer_contenido_bloque(pathBloq))){
-        log_info(loggerStorage, "##<QUERY_ID> - Bloque Lógico Leído <%s>:<%s> - Número de Bloque: <%d>",nombreArch,nombreTag,nroBloque);
+    if(!(*contenido = leer_contenido_bloque(pathBloq))){
+        log_info(loggerStorage, "##%d - Bloque Lógico Leído <%s>:<%s> - Número de Bloque: %d", query_id, nombreArch, nombreTag, nroBloque);
         free(pathBloq);
-        return true;
+        return RESULTADO_OK;
     }else{
         free(pathBloq);
-        return false;
+        *contenido = NULL;
+        return ERROR_LECTURA_FALLIDA;
     }
     
 }
 
-bool op_delete(char* nombreArch, char *nombreTag){
+t_resultado_storage op_delete(char* nombreArch, char *nombreTag, int query_id){
     usleep(retardo_operacion);
     t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
     if(!tag){
-        return false;
+        return ERROR_TAG_INEXISTENTE;
     }
     for(int i = 0; i < tag->logBlocks; i++){
         int bloqFis = list_get(tag->physicalBlocks,i);

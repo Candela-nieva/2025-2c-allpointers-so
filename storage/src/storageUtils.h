@@ -73,15 +73,16 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 
 //==========CONEXIONES==========
 void iniciar_servidor_multihilo(void);
+void* atender_worker(void* arg);
 //==========ATENDER PETICIONES WORKER============
-void atenderCreate(int fd_conexion);
-void atenderTruncate(int fd_conexion);
-void atenderTag(int fd_conexion);
-void atenderCommit(int fd_conexion);
-void atenderWrite(int fd_conexion);
-void atenderRead(int fd_conexion);
-void atenderDelete(int fd_conexion);
-void recibir_QID_nombreArch_nombreTag(int fd,int QID, char*nombreArch,char *nombreTag);
+void atenderCreate(int fd_conexion, void* buffer);
+void atenderTruncate(int fd_conexion, void* buffer);
+void atenderTag(int fd_conexion, void* buffer);
+void atenderCommit(int fd_conexion, void* buffer);
+void atenderWrite(int fd_conexion, void* buffer);
+void atenderRead(int fd_conexion, void* buffer);
+void atenderDelete(int fd_conexion, void* buffer);
+int recibir_QID_nombreArch_nombreTag(void* buffer, int* QID, char** nombreArch,char** nombreTag);
 //==========FRESH_START==========
 void inicializar_montaje();
 void cargar_config_hashIndex();
@@ -101,26 +102,26 @@ void crear_physical_blocks();
 void initialFile();
 //char *completar_ceros(int aCompletar);
 //==========BITMAP==========
-int buscar_bloque_libre();
+int buscar_bloque_libre(int query_id);
 char *obtener_path_bloque_fisico(int nroBloque);
 void marcar_libre_en_bitmap(int nro_fisico);
 void marcar_ocupado_en_bitmap(int nro_fisico);
 //==========FORMATO DE ENTRADAS==========
 int calcularAncho();
 //==========OPERACIONES==========
-bool op_create(char *nombreArch, char *nombreTag, int query_id);
-bool op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id);
-bool op_commit(char* nombreArch, char *nombreTag, int query_id);
-bool op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido, int query_id);
-bool op_read(char* nombreArch, char *nombreTag, int nroBloque, char *contenido, int query_id);
-bool op_delete(char* nombreArch, char *nombreTag, int query_id);
+t_resultado_storage op_create(char *nombreArch, char *nombreTag, int query_id);
+t_resultado_storage op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id);
+t_resultado_storage op_commit(char* nombreArch, char *nombreTag, int query_id);
+t_resultado_storage op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido, int query_id);
+t_resultado_storage op_read(char* nombreArch, char *nombreTag, int nroBloque, char **contenido, int query_id);
+t_resultado_storage op_delete(char* nombreArch, char *nombreTag, int query_id);
+t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int query_id);
 
 void crear_metadata(char* path, char* nuevoPath);
 void destruir_metadata(t_metadata* meta);
-bool op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag);
 t_metadata* leer_metadata(char* archivo, char* nombreTag);
 void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag);
-bool agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0);
+t_resultado_storage agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0);
 void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico);
 char* leer_contenido_bloque(char* path_bloque_logico);
 void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id);
