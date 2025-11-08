@@ -69,7 +69,6 @@ typedef enum {
     ERROR_NO_PUDO_ABRIR_ARCHIVO, // (Fallo al abrir el archivo)
     ERROR_LECTURA_FALLIDA,       // (Fallo al leer el bloque)
     ERROR_LINK_FALLIDO,           // (Fallo al crear el link simbólico)
-    ERROR_TRUNCATE_FALLIDO,      // (Fallo al truncar el archivo)
 } t_resultado_storage;
 
 void saludar(char* quien);

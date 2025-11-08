@@ -45,21 +45,10 @@ void escuchar_master(int socket_master) {
         switch(operacion) {
             //MENSAJE DE READ
             case MASTER_TO_QC_READ_RESULT:
-                /*int offset = 0;
-                char* file_tag = buffer_leer_string(paquete->buffer, &offset); // extrer string del paquete
-                char* contenido = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
-                log_info(loggerQueryCTRL, "## Lectura realizada: Archivo %s, contenido: %s", file_tag, contenido); // LOG OBLIGATORIO
-                free(file_tag);
-                free(contenido);*/
                 recibir_mensaje_read(socket_master);
                 break;
             //MENSAJE FIN_QUERY
             case MASTER_TO_QC_END:
-                
-                /*char* motivo = buffer_leer_string(paquete->buffer, &offset); // extraer string del paquete
-                log_info(loggerQueryCTRL, "## Query Finalizada - %s", motivo); // LOG OBLIGATORIO
-                free(motivo);
-                eliminar_paquete(paquete);*/
                 recibir_mensaje_exit(socket_master);
                 close(socket_master);
                 return; // Salimos de la función y terminamos la escucha*/
@@ -76,7 +65,39 @@ void escuchar_master(int socket_master) {
 }
 
 void recibir_mensaje_read(int socket_master){
-    //completar
+    void *buffer = recibir_buffer(socket_master);
+    char* contenido, nombreArch, nombreTag;
+    int len_contenido, len_nombreArch, len_nombreTag;
+
+    int offset = 0;
+
+    //Lectura de contenido
+    memcpy(&(len_contenido),buffer + offset, sizeof(int));
+    offset += sizeof(int);
+    contenido = malloc(len_contenido + 1);
+
+    memcpy(contenido,buffer + offset, len_contenido);
+    contenido[len_contenido] = '\0';
+
+    //Lectura de nombre del Archivo
+
+    memcpy(&(len_nombreArch),buffer + offset + len_contenido, sizeof(int));
+    offset += sizeof(int);
+    nombreArch = malloc(len_nombreArch + 1);
+
+    memcpy(nombreArch,buffer + offset + len_contenido, len_nombreArch);
+    nombreArch[len_nombreArch] = '\0';
+
+    //Lectura de nombre del Tag
+
+    memcpy(&(len_nombreTag),buffer + offset + len_contenido + len_nombreArch, sizeof(int));
+    offset += sizeof(int);
+    nombreTag = malloc(len_nombreTag + 1);
+
+    memcpy(nombreTag,buffer + offset + len_contenido + len_nombreArch, len_nombreTag);
+    nombreTag[len_nombreTag] = '\0';
+
+    log_info(loggerQueryCTRL, "## Lectura realizada: File - %s : %s, contenido: %s", nombreArch, nombreTag, contenido); // LOG OBLIGATORIO
 }
 
 void recibir_mensaje_exit(int socket_master){

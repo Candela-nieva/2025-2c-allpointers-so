@@ -52,10 +52,10 @@ typedef struct {
 } t_marco;
 
 typedef struct {
-    void* buffer;                    // unico malloc que contiene todos los marcos
+    void* buffer;                   // unico malloc que contiene todos los marcos
     t_marco* marcos;                // array de marcos de memoria
-    int cant_marcos;                // cantidad total de bloques en memoria
-    int tamanio_marco;              // tamaño de cada bloque en bytes
+    int cant_marcos;                // cantidad total de marcos en memoria
+    int tamanio_marco;              // tamaño de cada marco en bytes
     int tamanio_total;              // tamaño total de la memoria en bytes
     int puntero_clock;              // puntero para el algoritmo CLOCK
     char algoritmo[10];             // CLOCK o LRU 

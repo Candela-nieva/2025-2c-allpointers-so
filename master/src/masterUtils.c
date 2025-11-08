@@ -197,12 +197,63 @@ void atender_Worker(int fd){
                 }
                 eliminar_wcb(wcb);
                 return;
+            case MASTER_TO_QC_READ_RESULT:
+                log_info(loggerMaster, "WORKER <%d>, Envia resultado de read a Query %d ", id_worker, wcb->qid_asig);
+                //enviar a query resultado de read
+                int offset = 0;
+                void *buffer = recibir_buffer(fd);
+                char *contenido, arch, tag;
+                int tamCont, tamArch, tamTag;
+                
+                memcpy(&tamArch, buffer + offset, sizeof(int));
+                arch = malloc(tamArch + 1);
+                offset += sizeof(int);
+                memcpy(arch, buffer + offset,tamArch);
+                arch[tamArch] = '\0';
+                offset += tamArch;
+
+                memcpy(&tamTag, buffer + offset, sizeof(int));
+                tag = malloc(tamTag + 1);
+                offset += sizeof(int);
+                memcpy(tag, buffer + offset,tamTag);
+                tag[tamTag] = '\0';
+                offset += tamTag;
+
+                memcpy(&tamCont, buffer + offset, sizeof(int));
+                contenido = malloc(tamCont + 1);
+                offset += sizeof(int);
+                memcpy(contenido, buffer + offset,tamCont);
+                contenido[tamCont] = '\0';
+
+                t_qcb *qcb = buscar_qcb_por_ID(wcb->qid_asig);
+                t_paquete *paquete = crear_paquete(MASTER_TO_QC_READ_RESULT);
+                agregar_a_paquete_string(arch);
+                agregar_a_paquete_string(tag);
+                agregar_a_paquete_string(contenido);
+                enviar_paquete(paquete,qcb->socket);
+                eliminar_paquete(paquete);
+                if(arch)
+                    free(arch);
+                if(tag)
+                    free(tag);
+                if(contenido)
+                    free(contenido);
+                break;
+
+            case WORKER_TO_MASTER_END:
+                t_motivo motivoExit = recibir_operacion(fd);
+                t_qcb *qcbExit = buscar_qcb_por_ID(wcb->qid_asig);
+                enviar_mensaje_exit(qcbExit->socket, motivoExit);
+
+
             default:
                 log_info(loggerMaster, "Operacion desconocida recibida del WORKER ID <%d>", id_worker);
                 return;
         }
     }
 }
+
+
 
 void enviar_mensaje_exit(int socketQuery, t_motivo motivo){
     t_paquete *paquete = crear_paquete(MASTER_TO_QC_END);

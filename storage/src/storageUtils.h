@@ -58,6 +58,12 @@ typedef struct {
     char* estado;    // "WIP" o "COMMIT"
 } t_metadata;
 
+typedef struct {
+    int socket;
+    int ID_Worker;
+} t_worker;
+
+
 extern t_log* loggerStorage;
 extern t_config* config;
 extern t_config* config_SB;
