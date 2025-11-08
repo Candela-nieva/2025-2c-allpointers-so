@@ -395,14 +395,14 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     switch (inst_tipo) {
         case CREATE: {
             char* file_tag = strtok(NULL, " "); // agarro el nombre del archivo
-            ejecutar_create(file_tag);
+            ejecutar_create(file_tag, qid);
             break;
         }
         case TRUNCATE: {
             char* file_tag = strtok(NULL, " "); // agarro el nombre del archivo
             char* tam_str = strtok(NULL, " "); // agarro el nuevo tamaño
             int nuevo_tam = (tam_str != NULL) ? atoi(tam_str) : 0;
-            ejecutar_truncate(file_tag, nuevo_tam);
+            ejecutar_truncate(file_tag, nuevo_tam, qid);
             break;
         }
         case WRITE: {
@@ -474,9 +474,10 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
 // Existe la funcion de agregar a paquete un string tmb!! En protocolo
 
 // CREATE
-void ejecutar_create(char* file_tag){
+void ejecutar_create(char* file_tag, int qid){
     t_paquete* paquete = crear_paquete(CREATE);
     //int tam = strlen(file_tag) + 1;
+    agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, file_tag, strlen(file_tag));
     int tamanio = 0;
     agregar_a_paquete(paquete, &tamanio, sizeof(int));
@@ -486,13 +487,18 @@ void ejecutar_create(char* file_tag){
     //log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", file_tag);
 
     //Esperamos la confirmacion de storage (errores en las operaciones) 
-    if(recibir_operacion(socket_storage) != CREATE_OK){
-        log_info(loggerWorker, "Instrucción CREATE fallida para el tag: %s", file_tag);
+    if(recibir_operacion(socket_storage) == ERROR_FILE_PREEXISTENTE){
+        log_info(loggerWorker, "Instrucción CREATE fallida: El tag %s ya existe en Storage.", file_tag);
+        return;
+    }
+    
+    if(recibir_operacion(socket_storage) == RESULTADO_OK){
+        log_info(loggerWorker, "Instrucción CREATE exitosa para el tag: %s", file_tag);
     }
 }
 
 // TRUNCATE
-void ejecutar_truncate(char* tag, int nuevo_tam) {
+void ejecutar_truncate(char* tag, int nuevo_tam, int qid) {
     log_info(loggerWorker, "TRUNCATE solicitado en tag: %s, nuevo tamaño: %d", tag, nuevo_tam); // LOG NO OBLIGATORIO
     
     if(tamanio_bloque_storage <= 0) {
@@ -506,14 +512,25 @@ void ejecutar_truncate(char* tag, int nuevo_tam) {
     }
 
     t_paquete* paquete = crear_paquete(TRUNCATE);
+    agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, tag, strlen(tag));
     agregar_a_paquete(paquete, &nuevo_tam, sizeof(int));
     enviar_paquete(paquete, socket_storage);  // se envia a Storage
     eliminar_paquete(paquete);
  
     // Esperamos la confirmacion de storage (errores en las operaciones)
-    if(recibir_operacion(socket_storage) != TRUNCATE_OK){
+    if(recibir_operacion(socket_storage) == ERROR_TRUNCATE_FALLIDO) {
         log_info(loggerWorker, "Instrucción TRUNCATE fallida para el tag: %s", tag);
+        return;
+    }
+    
+    if(recibir_operacion(socket_storage) == ERROR_ESCRITURA_NO_PERMITIDA) {
+        log_info(loggerWorker, "Instrucción TRUNCATE fallida: Truncar el file:tag: %s que se encuentre en estado COMMITED", tag);
+        return;
+    }
+
+    if(recibir_operacion(socket_storage) == RESULTADO_OK){
+        log_info(loggerWorker, "Instrucción TRUNCATE exitosa para el tag: %s", tag);
     }
     
     log_info(loggerWorker, "Instrucción TRUNCATE enviada a Storage para el tag: %s, nuevo tamaño: %d", tag, nuevo_tam); // LOG NO OBLIGATORIO
@@ -591,7 +608,9 @@ void ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
         qid, direccion_base, contenido); // LOG OBLIGATORIO
 }
 
+// Maneja un page fault para la página lógica dada
 t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid) {
+    
     log_info(loggerWorker, "Query %d: Page Fault en %s página %d", qid, file_tag, pagina_logica);
 
     int indice_marco_victima = seleccionar_victima(qid);
@@ -791,10 +810,39 @@ void* direccion_fisica_marco(int marco_id) {
 
 //REVISAR FUNCIÓN
 
+// Objetivo --> elegir el indice del marco fisico donde se va a cargar la pagina solicitada
 int seleccionar_victima(int qid) {
+    pthread_mutex_lock(&memoria.mutex);
+
+    // 1ero: Busco marcos libres 
+    for(int i = 0; i < memoria.cant_marcos; i++) {
+        if(!memoria.marcos[i].ocupado) {
+            //log_info(loggerWorker, "Query %d: Se asigna el Marco: %d a la Página: <NUMERO_PAGINA> perteneciente al - File: <FILE> - Tag: <TAG>”") LOG OBLIGATORIO DONDE LO PUEDO METER?
+            log_info(loggerWorker, "Query %d: Seleccionando marco libre %d para cargar página.", qid, i);
+            pthread_mutex_unlock(&memoria.mutex);
+            return i;
+        }
+    }
+
+    // 2do: No hay marcos libres --> aplicar algoritmo de reemplazo
+    int victima = 0;
+
+    if( strcmp(memoria.algoritmo, "CLOCK-M") == 0) {
+        victima = reemplazo_clock_modificado(qid);
+    }
+    else if(strcmp(memoria.algoritmo, "LRU") == 0) {
+        victima = reemplazo_lru(qid);
+    }
+    else {
+        log_info(loggerWorker, "Algoritmo desconocido '%s', se usará marco 0 por defecto", memoria.algoritmo);
+    }
     
+    pthread_mutex_unlock(&memoria.mutex);
+    return victima;
+
 }
 
+/*
 int seleccionar_bloque_victima() {
     if( strcmp(memoria.algoritmo, "CLOCK-M") == 0) {
         return reemplazo_clock_modificado();
@@ -804,11 +852,15 @@ int seleccionar_bloque_victima() {
     }
     return 0; // por defecto
 }
+*/
 
-/*
+
 //HAY QUE REVISAR ESTA FUNCION
-void solicitar_pagina_a_storage(char* tag, int bloque_id, t_marco* destino){
+void solicitar_bloque_a_storage(char* tag, int bloque_id, t_marco* destino, int qid){
+    log_info(loggerWorker, "Query %d: Solicitando a Storage - File: %s, Bloque: %d", qid, tag, bloque_id);
+    
     t_paquete* paquete = crear_paquete(SOLICITAR_BLOQUE);
+    agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, tag, strlen(tag));
     agregar_a_paquete(paquete, &bloque_id, sizeof(int));
     enviar_paquete(paquete, socket_storage);
@@ -834,7 +886,7 @@ void solicitar_pagina_a_storage(char* tag, int bloque_id, t_marco* destino){
 
     log_info(loggerWorker, "Bloque [%s:%d] cargado en memoria desde Storage.", tag, bloque_id);
 }
-*/
+
 
 /*
 //HAY QUE REVISAR EL ENVIAR
@@ -866,7 +918,7 @@ void enviar_pagina_a_storage(t_marco* bloque){
 // --- Algoritmos de reemplazo ---
 
 /// Posible funcion de clock m
-int reemplazo_clock_modificado() { // revisar 
+int reemplazo_clock_modificado(int qid) { // revisar 
     int vueltas = 0;
     int victima = -1;
 
@@ -917,24 +969,28 @@ int reemplazo_clock_modificado() { // revisar
     return victima;
 }
 
-// Posible funcion de lru
-int reemplazo_lru() {
-    // Buscar bloque con la menor ultima_ref
+// Buscar bloque con la menor ultima_ref
+int reemplazo_lru(int qid) {
+    
     time_t min_ref = time(NULL);
-    int victima = 0;
+    int victima = -1;
 
     for(int i = 0; i < memoria.cant_marcos; i++) {
-        if(!memoria.marcos[i].ocupado) {
-            // Bloque libre --> lo usamos directamente
-            log_info(loggerWorker, "LRU seleccionó bloque libre: %d", i);
-            return i;
+        t_marco* m = &memoria.marcos[i];
+        // Bloque libre --> lo usamos directamente
+        if(!m->ocupado){
+            victima = i;
+            log_info(loggerWorker, "LRU seleccionó marco libre: %d", i);
+            break;
         }
-        if(memoria.marcos[i].ultima_ref < min_ref) {
-            min_ref = memoria.marcos[i].ultima_ref;
+        
+        if(m.ultima_ref < min_ref) {
+            min_ref = m.ultima_ref;
             victima = i;
         }
     }
 
+    log_info(loggerWorker, "Query %d: LRU seleccionó marco víctima: %d", qid, victima);
     return victima;
 }
 
