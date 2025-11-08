@@ -390,30 +390,34 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     
     tipo_instruccion inst_tipo = obtener_instruccion(op);
 
+    char* file_tag = strtok(NULL, " ");
+    /*char* nombreArch = strdup(file_tag);
+    char* nombreTag = strchr(nombreArch, ':');
+
+    if(nombreTag != NULL) {
+        *nombreTag = '\0'; // Separa el nombre del archivo del tag
+        nombreTag++;       // Avanza al inicio del tag
+    }*/
+
     // 2. Usamos el enum en el switch
     switch (inst_tipo) {
         case CREATE:
-            char* file_tag = strtok(NULL, " "); // agarro el nombre del archivo
             ejecutar_create(file_tag, qid);
             break;
         case TRUNCATE:
-            char* file_tag = strtok(NULL, " "); // agarro el nombre del archivo
             char* tam_str = strtok(NULL, " "); // agarro el nuevo tamaño
             int nuevo_tam = (tam_str != NULL) ? atoi(tam_str) : 0;
             ejecutar_truncate(file_tag, nuevo_tam, qid);
             break;
         case WRITE:
-            char* file_tag = strtok(NULL, " "); // agarro el nombre del archivo
             char* dir_str = strtok(NULL, " "); // agarro la direccion
             char* contenido = strtok(NULL, ""); // agarro el contenido
             int direccion = (dir_str != NULL) ? atoi(dir_str) : 0;
-
             // RETARDO_MEMORIA: Solo se aplica en READ y WRITE
             usleep((useconds_t)retardo_memoria * 1000);
             ejecutar_write(file_tag, direccion, contenido, qid); 
             break;
         case READ:
-            char* file_tag = strtok(NULL, " ");
             char* dir_str = strtok(NULL, " ");
             char* tam_str = strtok(NULL, " ");
             int direccion = (dir_str != NULL) ? atoi(dir_str) : 0;
@@ -425,16 +429,16 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
             break;
         case TAG:
             char* origen = strtok(NULL, " ");
-            char* destino = strtok(NULL, ""); // El resto
-            //ejecutar_tag(origen, destino, qid);
+            char* destino = strtok(NULL, ""); 
+            ejecutar_tag(origen, destino, qid);
             break;
         case COMMIT:
             char* file_tag = strtok(NULL, " ");
-            //ejecutar_commit(file_tag, qid);
+            ejecutar_commit(file_tag, qid);
             break;
         case FLUSH:
             char* file_tag = strtok(NULL, " ");
-            //ejecutar_flush(file_tag, qid);
+            ejecutar_flush(file_tag, qid);
             break;
         case DELETE:
             char* file_tag = strtok(NULL, " ");
@@ -460,13 +464,19 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
 
 // ==== Funciones de ejecucion de instrucciones ====
 // Existe la funcion de agregar a paquete un string tmb!! En protocolo
-
 // CREATE
 void ejecutar_create(char* file_tag, int qid){
+    char* nombreArch = strdup(file_tag);
+    char* nombreTag = strchr(nombreArch, ':');
+
+    if(nombreTag != NULL) {
+        *nombreTag = '\0'; // Separa el nombre del archivo del tag
+        nombreTag++;       // Avanza al inicio del tag
+    }
     t_paquete* paquete = crear_paquete(CREATE);
-    //int tam = strlen(file_tag) + 1;
     agregar_a_paquete(paquete, &qid, sizeof(int));
-    agregar_a_paquete_string(paquete, file_tag, strlen(file_tag));
+    agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
+    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag))
     int tamanio = 0;
     agregar_a_paquete(paquete, &tamanio, sizeof(int));
 
@@ -498,10 +508,18 @@ void ejecutar_truncate(char* tag, int nuevo_tam, int qid) {
         log_info(loggerWorker, "Error: El nuevo tamaño %d NO es múltiplo del tamaño de bloque %d. TRUNCATE abortado.", nuevo_tam, tamanio_bloque_storage);
         return;
     }
+    char* nombreArch = strdup(file_tag);
+    char* nombreTag = strchr(nombreArch, ':');
+
+    if(nombreTag != NULL) {
+        *nombreTag = '\0'; // Separa el nombre del archivo del tag
+        nombreTag++;       // Avanza al inicio del tag
+    }
 
     t_paquete* paquete = crear_paquete(TRUNCATE);
     agregar_a_paquete(paquete, &qid, sizeof(int));
-    agregar_a_paquete_string(paquete, tag, strlen(tag));
+    agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
+    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag))
     agregar_a_paquete(paquete, &nuevo_tam, sizeof(int));
     enviar_paquete(paquete, socket_storage);  // se envia a Storage
     eliminar_paquete(paquete);
@@ -537,7 +555,7 @@ void ejecutar_truncate(char* tag, int nuevo_tam, int qid) {
     log_info(loggerWorker, "Instrucción TRUNCATE enviada a Storage para el tag: %s, nuevo tamaño: %d", tag, nuevo_tam); // LOG NO OBLIGATORIO
 }
 
-// WRITE
+// WRITE char* nombreArch, char* nombreTag,
 void ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
 
     usleep((useconds_t)retardo_memoria * 1000);  // Retardo por escritura en memoria
@@ -585,7 +603,7 @@ void ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
         qid, direccion_base, contenido); // LOG OBLIGATORIO
 }
 
-// Maneja un page fault para la página lógica dada
+// Maneja un page fault para la página lógica dada char* nombreArch, char* nombreTag,
 t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid) {
     
     log_info(loggerWorker, "Query %d: Page Fault en %s página %d", qid, file_tag, pagina_logica);
@@ -621,7 +639,7 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     }
 
     // Pedimos a storage la nueva bloque
-    bool ok_lectura = solicitar_bloque_a_storage(file_tag, pagina_logica, marco_victima);
+    bool ok_lectura = solicitar_bloque_a_storage(qid,file_tag, pagina_logica, marco_victima);
     if (!ok_lectura) {
         //pthread_mutex_unlock(&memoria.mutex);
         return NULL; // Error al traer el bloque (Storage dijo que no existe)
@@ -652,9 +670,6 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     //pthread_mutex_unlock(&memoria.mutex);
     return nueva;
 }
-
-
-// TODO: completar las demas instrucciones (con el tema de incorporar memoria interna y demas)
 
 // READ
 void ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
@@ -710,11 +725,102 @@ void ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
 
 }
 
-// 
+// TODO: completar las demas instrucciones (con el tema de incorporar memoria interna y demas)
+
+// TAG
+void ejecutar_tag(char* origen, char* destino, int qid) {
+    if (!origen || !destino) {
+        log_error(loggerWorker, "Query %d: Parámetros inválidos en TAG.", qid);
+        return;
+    }
+
+    // Separo el origen
+    char* file_origen = strdup(origen);
+    char* tag_origen = strchr(file_origen, ':');
+    
+    if(!tag_origen){
+        log_info(loggerWorker, "Query %d: Formato inválido en origen: %s", qid, origen);
+        free(file_origen);
+        return;
+    }
+
+    *tag_origen = '\0'; // corto el string en ':'
+    tag_origen++;       // ahora apunta al nombre del tag
+
+
+    // Separo el destino
+    char* file_destino = strdup(destino);
+    char* tag_destino = strchr(file_destino, ':');
+    if(!tag_destino){
+        log_info(loggerWorker, "Query %d: Formato inválido en destino: %s", qid, destino);
+        free(file_origen);
+        free(file_destino);
+        return;
+    }
+
+    *tag_destino = '\0'; // corto el string en ':'
+    tag_destino++;       // ahora apunta al nombre del tag
+
+    log_info(loggerWorker, "Query %d: Solicitando TAG en Storage -> Origen [%s:%s], Destino [%s:%s]",
+        qid, file_origen, tag_origen, file_destino, tag_destino);
+
+    // Envio el paquete a storage
+    t_paquete* paquete = crear_paquete(TAG);
+    agregar_a_paquete(paquete, &qid, sizeof(int));
+    agregar_a_paquete_string(paquete, file_origen, strlen(file_origen));
+    agregar_a_paquete_string(paquete, tag_origen, strlen(tag_origen));
+    agregar_a_paquete_string(paquete, file_destino, strlen(file_destino));
+    agregar_a_paquete_string(paquete, tag_destino, strlen(tag_destino));   
+    enviar_paquete(paquete, socket_storage);
+    eliminar_paquete(paquete);
+    
+    // Espero respuesta..
+    int resultado = recibir_operacion(socket_storage);
+    
+    switch(resultado) {
+        case RESULTADO_OK:
+            log_info(loggerWorker, "Query %d: Instrucción TAG exitosa: [%s:%s] -> [%s:%s]",
+                qid, file_origen, tag_origen, file_destino, tag_destino);
+            break;
+        case ERROR_FILE_INEXISTENTE:
+            log_info(loggerWorker, "Query %d: Instrucción TAG fallida: El file %s no existe en Storage.",
+                qid, file_origen);
+            break;
+        case ERROR_TAG_INEXISTENTE:
+            log_info(loggerWorker, "Query %d: Instrucción TAG fallida: El tag %s no existe en Storage.",
+                qid, tag_origen);
+            break;
+        default:
+            log_info(loggerWorker, "Query %d: Instrucción TAG fallida: Error desconocido.", qid);
+            break;
+    }
+    
+    free(file_origen);
+    free(file_destino);
+
+}
+
+
+
+// COMMIT
+void ejecutar_commit(char* file_tag, int qid){
+    
+}
+
+
+// FLUSH
+//Persiste todas las modificaciones de un File:Tag en Memoria Interna
+void ejecutar_flush(char* file_tag, int qid){
+    log_info(loggerWorker, "Query %d: Iniciando FLUSH para %s", qid, file_tag);
+
+}
+
+// DELETE 
 
 
 
 
+// END
 
 
 
@@ -906,15 +1012,22 @@ int seleccionar_bloque_victima() {
 
 
 //Lo mejor sería que se llame bloque, porque lo mque le pedimos es el vontenido de un bloque ya que storage utiliza eso, no paginasx
-bool solicitar_bloque_a_storage(int qid, char* tag, int bloque_id, t_marco* destino) {
+bool solicitar_bloque_a_storage(int qid, char* tag, t_marco* destino) {
     
     log_info(loggerWorker, "Query %d: Solicitando bloque a Storage - File: %s, Bloque: %d", qid, tag, bloque_id);
 
     t_paquete* paquete = crear_paquete(READ); 
     
     agregar_a_paquete(paquete, &qid, sizeof(int));
-    agregar_a_paquete_string(paquete, tag, strlen(tag));
-    agregar_a_paquete(paquete, &bloque_id, sizeof(int));
+    char* nombreArch = strdup(tag);
+    char* nombreTag = strchr(nombreArch, ':');
+
+    if(nombreTag != NULL) {
+        *nombreTag = '\0'; // Separa el nombre del archivo del tag
+        nombreTag++;       // Avanza al inicio del tag
+    }
+    agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
+    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag))
     
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
@@ -944,7 +1057,6 @@ bool solicitar_bloque_a_storage(int qid, char* tag, int bloque_id, t_marco* dest
 
     // Worker actualiza la metadata del marco
     strcpy(destino->file_tag, tag);
-    destino->bloque_id = bloque_id;
     destino->ocupado = true;
     destino->modificado = false;
     destino->en_uso = true;
@@ -956,16 +1068,27 @@ bool solicitar_bloque_a_storage(int qid, char* tag, int bloque_id, t_marco* dest
 
 void enviar_bloque_a_storage(t_marco* bloque, int qid){
     
+    char* nombreArch = strdup(bloque->file_tag);
+    char* nombreTag = strchr(nombreArch, ':');
+
+    if(nombreTag != NULL) {
+        *nombreTag = '\0'; // Separa el nombre del archivo del tag
+        nombreTag++;       // Avanza al inicio del tag
+    }
+
     t_paquete* paquete = crear_paquete(WRITE); // (Necesitas este op_code en protocolo.h)
     
     agregar_a_paquete(paquete, &qid, sizeof(int));
-    agregar_a_paquete_string(paquete, bloque->file_tag, strlen(bloque->file_tag) + 1);
+    agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
+    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag))
     agregar_a_paquete(paquete, &bloque->pagina_logica, sizeof(int));
+
     // Calculamos la dirección de los datos en el buffer principal
     int num_marco = (bloque - memoria.marcos); // Índice del marco
     // (Calculamos la dirección física real dentro de 'memoria.buffer')
     void* direccion_fisica_origen = memoria.buffer + (num_marco * memoria.tamanio_marco);
     // Enviamos el contenido completo del marco
+    
     agregar_a_paquete(paquete, direccion_fisica_origen, tamanio_bloque_storage);
     
     enviar_paquete(paquete, socket_storage);

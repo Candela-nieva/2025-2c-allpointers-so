@@ -26,19 +26,6 @@ typedef struct {
     char* log_level;
 } t_config_worker;
 
-/*typedef enum {
-    CREATE,
-    TRUNCATE,
-    WRITE,
-    READ,
-    TAG,
-    COMMIT,
-    FLUSH,
-    DELETE,
-    END,
-    DESCONOCIDA // Para cualquier instrucción no reconocida
-} tipo_instruccion;*/
-
 // ============== Memoria Interna ================
 typedef struct {
     char file_tag[128];     // nombre del file:tag que ocupa este marco (cadena vacia si esta libre)
@@ -102,12 +89,15 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc);
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
 tipo_instruccion obtener_instruccion(const char* op);
 static void notificar_fin_query_a_master(int qid, const char* motivo);
-void ejecutar_write(char* tag, int direccionBase, char* contenido, int qid);
+
 //t_bloque_memoria* buscar_bloque(char* tag, int bloque_id);
 t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid);
-void ejecutar_create(char* file_tag);
-void ejecutar_truncate(char* tag, int nuevo_tam);
+
 void inicializar_memoria_interna();
+//============= EJECUTAR INSTRUCCIONES ==============
+void ejecutar_create(char* nombreArch, char* nombreTag, int qid);
+void ejecutar_truncate(char* nombreArch, char* nombreTag, int qid, int nuevo_tam);
+void ejecutar_write(char* nombreArch, char* nombreTag, int direccionBase, char* contenido, int qid);
 
 int seleccionar_victima(int quid);
 int seleccionar_bloque_victima();

@@ -100,7 +100,7 @@ void iniciar_servidor_multihilo(void)
         if(operacion == HANDSHAKE_WORKER){
             ++cant_workers;
             int idWorker;
-            void *buffer = recibir_buffer();
+            void *buffer = recibir_buffer(fd_conexion);
             memcpy(&idWorker, buffer,sizeof(int));
             free(buffer);
             log_info(loggerStorage, "##Se conecta el Worker <%d> - Cantidad de Workers: <%d>", idWorker,cant_workers);
@@ -128,17 +128,17 @@ void iniciar_servidor_multihilo(void)
 void* atender_worker(void* arg){
     t_worker *worker = (t_worker *)arg;
     //int qid;
-    free(arg);##Se desconecta el Worker <WORKER_ID> - Cantidad de Workers: <CANTIDAD>
+    free(arg);
     while (1)
     {
-        tipo_instruccion inst = recibir_operacion(fd);
+        tipo_instruccion inst = recibir_operacion(worker->socket);
         if(inst <= 0) {
             cant_workers--;
             log_info(loggerStorage, "##Se desconecta el Worker %d - Cantidad de Workers: %d", worker->ID_Worker, cant_workers);
             darDeBajaWorker(worker);
             return NULL;
         }
-        void* buffer = recibir_buffer(fd);
+        void* buffer = recibir_buffer(worker->socket);
         if(buffer == NULL)
             continue;
         //agregue esto porque me parecio copado jeje
@@ -177,7 +177,7 @@ void* atender_worker(void* arg){
         }
     }
     // Nunca llega acá
-    close(fd);
+    close(worker->socket);
     return;
 }
 
@@ -201,7 +201,8 @@ void atenderCreate(int fd_conexion, void* buffer){
 
 void atenderTruncate(int fd_conexion, void* buffer){
     int QID, nuevoTam;
-    char *nombreArch, nombreTag;
+    char *nombreArch; 
+    char *nombreTag;
 
     int offset = recibir_QID_nombreArch_nombreTag(buffer, &QID, &nombreArch, &nombreTag);
 
@@ -211,7 +212,6 @@ void atenderTruncate(int fd_conexion, void* buffer){
     t_resultado_storage resultado = op_truncate(nombreArch, nombreTag, nuevoTam, QID);
     enviar_operacion(fd_conexion, resultado);
 
-    
     if(nombreArch)
         free(nombreArch);
     if(nombreTag)
@@ -219,15 +219,21 @@ void atenderTruncate(int fd_conexion, void* buffer){
 }
 
 void atenderTag(int fd_conexion, void* buffer){
-    int offset = 0;
-    int QID;
-    char *nombreArch, nombreTag;
+    int QID, tamNuevoTag;
+    char *nombreArch;
+    char *nombreTag;
+    char *nombreNuevoTag;
     
-    recibir_QID_nombreArch_nombreTag(buffer,&QID, &nombreArch, &nombreTag);
+    int offset = recibir_QID_nombreArch_nombreTag(buffer,&QID, &nombreArch, &nombreTag);
 
+    memcpy(&tamNuevoTag,buffer + offset, sizeof(int));
+    offset += sizeof(int);
+    nombreNuevoTag = malloc(tamNuevoTag + 1);
+    memcpy(nombreNuevoTag,buffer + offset, tamNuevoTag);
+    nombreNuevoTag[tamNuevoTag] = '\0';
     free(buffer);
 
-    t_resultado_storage resultado = op_tag(nombreArch, nombreTag, nuevoTam, QID);
+    t_resultado_storage resultado = op_tag(nombreArch, nombreTag, nombreNuevoTag,QID);
     if(nombreArch)
         free(nombreArch);
     if(nombreTag)
@@ -235,14 +241,14 @@ void atenderTag(int fd_conexion, void* buffer){
 }
 
 void atenderCommit(int fd_conexion, void* buffer){
-    int offset = 0;
     int QID;
-    char *nombreArch, nombreTag;
+    char *nombreArch;
+    char *nombreTag;
 
     recibir_QID_nombreArch_nombreTag(buffer,&QID, &nombreArch, &nombreTag);
     free(buffer);
 
-    t_resultado_storage resultado = op_tag(nombreArch, nombreTag, nuevoTam, QID);
+    t_resultado_storage resultado = op_commit(nombreArch, nombreTag, QID);
 
     if(nombreArch)
         free(nombreArch);
@@ -251,10 +257,11 @@ void atenderCommit(int fd_conexion, void* buffer){
 }
 
 void atenderWrite(int fd_conexion, void* buffer){
-    int offset = 0;
     int QID, base, tamCont;
-    char *nombreArch, nombreTag;
-    void *contenido;
+    char *nombreArch;
+    char *nombreTag;
+    char *contenido;
+    //void *contenido;
 
     int offset = recibir_QID_nombreArch_nombreTag(buffer,&QID, &nombreArch, &nombreTag);
     memcpy(&base,buffer + offset, sizeof(int));
@@ -277,9 +284,10 @@ void atenderWrite(int fd_conexion, void* buffer){
 }
 
 void atenderRead(int fd_conexion, void* buffer){
-    int offset = 0;
     int QID, nroBloq;
-    char *nombreArch, nombreTag, contenido;
+    char *nombreArch;
+    char *nombreTag; 
+    char *contenido;
 
     int offset = recibir_QID_nombreArch_nombreTag(buffer,&QID, &nombreArch, &nombreTag);
     memcpy(&nroBloq,buffer + offset, sizeof(int));
@@ -287,11 +295,15 @@ void atenderRead(int fd_conexion, void* buffer){
     
     t_resultado_storage resultado = op_read(nombreArch, nombreTag, nroBloq,&contenido,QID);
     t_paquete *paquete = crear_paquete(resultado);
-    agregar_a_paquete_string(contenido);
-
-    enviar_paquete(paquete);
-    eliminar_paquete(paquete);
-
+    if(resultado == RESULTADO_OK) {
+        agregar_a_paquete_string(paquete, contenido, strlen(contenido));
+        enviar_paquete(paquete, fd_conexion);
+        eliminar_paquete(paquete);
+    } else {
+        enviar_paquete(paquete, fd_conexion);
+        eliminar_paquete(paquete);
+    }
+    
     if(nombreArch)
         free(nombreArch);
     if(nombreTag)
@@ -303,12 +315,13 @@ void atenderRead(int fd_conexion, void* buffer){
 void atenderDelete(int fd_conexion, void* buffer){
     int offset = 0;
     int QID;
-    char *nombreArch, nombreTag;
+    char *nombreArch;
+    char *nombreTag;
 
     recibir_QID_nombreArch_nombreTag(buffer,&QID, &nombreArch, &nombreTag);
     free(buffer);
 
-    t_resultado_storage resultado = op_tag(nombreArch, nombreTag, nuevoTam, QID);
+    t_resultado_storage resultado = op_delete(nombreArch, nombreTag, QID);
     enviar_operacion(fd_conexion,resultado);
 
     if(nombreArch)
@@ -509,11 +522,13 @@ void crear_physical_blocks() {
 
 void initialFile(){
     op_create("initial_file","BASE", 0);
-    op_truncate("initial_file","BASE",tam_bloq, 0);
-    //marcar_ocupado_en_bitmap(0);
-    op_write("initial_file","BASE", 0, "hOla, me llamo Rusell y soy un guia explorador", 0);
+    op_truncate("initial_file","BASE", tam_bloq, 0);
+    void *escrituraInicial = malloc(tam_bloq);
+    memset(escrituraInicial, 0, tam_bloq);
+    op_write("initial_file","BASE", 0,escrituraInicial, 0);
+    free(escrituraInicial);
     op_commit("initial_file","BASE", 0);
-    op_delete("initial_file","BASE", 0);
+    //op_delete("initial_file","BASE", 0);
     //op_tag("initial_file","BASE","BASE2");
     
     /*int bloqueInicial = buscar_bloque_libre();
@@ -563,10 +578,6 @@ t_resultado_storage op_create(char *nombreArch, char *nombreTag, int query_id){
     if(archRepetido(nombreArch)){
         log_info(loggerStorage, "Fallo : File preexistente %s:%s", nombreArch, nombreTag);
         return ERROR_FILE_PREEXISTENTE;
-    }
-    if(tagRepetido(nombreArch,nombreTag)){
-        log_info(loggerStorage, "Fallo : Tag preexistente %s:%s", nombreArch, nombreTag);
-        return ERROR_TAG_PREEXISTENTE;
     }
     char initial[256];
     crear_directorio(path_files, nombreArch, initial);
@@ -700,7 +711,8 @@ t_resultado_storage op_truncate(char* nombreArch, char *nombreTag, int nuevoTama
     if (bloques_nuevos > bloques_actuales) {
         char *path_block0 = obtener_path_bloque_fisico(0);
         for (int i = bloques_actuales; i < bloques_nuevos; i++) {
-            if((t_resultado_storage resultado = agrandarArchivo(meta, tag->pathTag, i, path_block0)) != RESULTADO_OK) {
+            t_resultado_storage resultado = agrandarArchivo(meta, tag->pathTag, i, path_block0);
+            if(resultado != RESULTADO_OK) {
                 free(path_block0);
                 destruir_metadata(meta);
                 return resultado;
@@ -816,7 +828,7 @@ t_resultado_storage op_commit(char* nombreArch, char *nombreTag, int query_id){
                 FILE *archHash = fopen(path_blocks_hash, "a");
                 if (archHash) {
                     char nuevaEntrada[256];
-                    sprintf(nuevaEntrada, "%s=%s",hash,Bloque);
+                    sprintf(nuevaEntrada, "%s=%s\n",hash,Bloque);
                     fputs(nuevaEntrada, archHash);
                     fclose(archHash);
                 } else {
@@ -830,11 +842,12 @@ t_resultado_storage op_commit(char* nombreArch, char *nombreTag, int query_id){
         tag->estado = COMMITED;
         
         t_metadata *meta = leer_metadata(nombreArch, nombreTag);
+        meta->tamanio = tag->tamanio;
         meta->estado = strdup("COMMITED");
         meta->blocks = list_duplicate(tag->physicalBlocks);
         guardar_metadata(meta, nombreArch, nombreTag);
         destruir_metadata(meta); //elimina memory leak?
-        log_info(loggerStorage, "##%d - Commit de File:Tag %s:%s", 1/*query_id!!!!*/, nombreArch, nombreTag);
+        log_info(loggerStorage, "##%d - Commit de File:Tag %s:%s", query_id, nombreArch, nombreTag);
         
         pthread_mutex_unlock(&tag->mutexTag);
         return RESULTADO_OK;
@@ -897,7 +910,6 @@ t_resultado_storage op_write(char* nombreArch, char *nombreTag, int direccBase, 
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if (!tag) {
         log_info(loggerStorage, "Tag inexistente %s:%s", nombreArch, nombreTag);
-        destruir_metadata(meta);
         return ERROR_TAG_INEXISTENTE;
     }
     if(direccBase + strlen(contenido) > tag->tamanio){
