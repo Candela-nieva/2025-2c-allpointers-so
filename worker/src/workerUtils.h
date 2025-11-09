@@ -111,7 +111,7 @@ int reemplazo_lru();
 void notificar_fin_query_a_master(int qid, int motivo_op_code);
 
 bool enviar_bloque_a_storage(int qid, t_marco* bloque);
-bool solicitar_pagina_a_storage(int qid, char* file_tag_completo, int pagina_logica, t_marco* destino);
+bool solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
 
 void inicializar_tablas_paginas();
