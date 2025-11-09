@@ -243,9 +243,13 @@ void* manejar_ejecutar(void *buffer) {
 }*/
 //prueba
 
-static void notificar_fin_query_a_master(int qid, t_resultado_storage motivo) { 
+static void notificar_fin_query_a_master(int qid, int motivo_op_code) { 
     t_paquete* p = crear_paquete(WORKER_TO_MASTER_END); // (Necesitas este op_code en protocolo.h)
     agregar_a_paquete(p, &qid, sizeof(int));
+    agregar_a_paquete(p, &qid, sizeof(int));
+    
+    // 3. ¡CORRECCIÓN! Agrega el 'motivo' como un int (op_code)
+    agregar_a_paquete(p, &motivo_op_code, sizeof(int));
     enviar_paquete(p, socket_master);
     eliminar_paquete(p);
 }
@@ -387,7 +391,8 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     strncpy(instruccion_log, op, 255);
 
     bool fue_end = false;
-    
+    bool exito_operacion = true; 
+
     tipo_instruccion inst_tipo = obtener_instruccion(op);
 
     char* file_tag = strtok(NULL, " ");
@@ -402,12 +407,16 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     // 2. Usamos el enum en el switch
     switch (inst_tipo) {
         case CREATE:
-            ejecutar_create(file_tag, qid);
+            if (! ejecutar_create(file_tag, qid)) { 
+                exito_operacion = false; // Marcamos que la operación falló
+            }
             break;
         case TRUNCATE:
             char* tam_str = strtok(NULL, " "); // agarro el nuevo tamaño
             int nuevo_tam = (tam_str != NULL) ? atoi(tam_str) : 0;
-            ejecutar_truncate(file_tag, nuevo_tam, qid);
+            if (! ejecutar_truncate(file_tag, nuevo_tam, qid)) { 
+                exito_operacion = false; // Marcamos que la operación falló
+            }
             break;
         case WRITE:
             char* dir_str = strtok(NULL, " "); // agarro la direccion
@@ -415,7 +424,9 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
             int direccion = (dir_str != NULL) ? atoi(dir_str) : 0;
             // RETARDO_MEMORIA: Solo se aplica en READ y WRITE
             usleep((useconds_t)retardo_memoria * 1000);
-            ejecutar_write(file_tag, direccion, contenido, qid); 
+            if (!ejecutar_write(file_tag, direccion, contenido, qid)) { 
+                exito_operacion = false; // Marcamos que la operación falló
+            }
             break;
         case READ:
             char* dir_str = strtok(NULL, " ");
@@ -425,20 +436,28 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
 
             // RETARDO_MEMORIA: Solo se aplica en READ y WRITE
             usleep((useconds_t)retardo_memoria * 1000);
-            ejecutar_read(file_tag, direccion, tam, qid);
+            if (!ejecutar_read(file_tag, direccion, tam, qid)) { 
+                exito_operacion = false; // Marcamos que la operación falló
+            }
             break;
         case TAG:
             char* origen = strtok(NULL, " ");
             char* destino = strtok(NULL, ""); 
-            ejecutar_tag(origen, destino, qid);
+            if (!ejecutar_tag(origen, destino, qid)) { 
+                exito_operacion = false; // Marcamos que la operación falló
+            }
             break;
         case COMMIT:
             char* file_tag = strtok(NULL, " ");
-            ejecutar_commit(file_tag, qid);
+            if (!ejecutar_commit(file_tag, qid)) { 
+                exito_operacion = false; // Marcamos que la operación falló
+            }
             break;
         case FLUSH:
             char* file_tag = strtok(NULL, " ");
-            ejecutar_flush(file_tag, qid);
+            if (! ejecutar_flush(file_tag, qid)) { 
+                exito_operacion = false; // Marcamos que la operación falló
+            }
             break;
         case DELETE:
             char* file_tag = strtok(NULL, " ");
@@ -671,8 +690,8 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     return nueva;
 }
 
-// READ
-void ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
+// READ no terminada
+bool ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
     int pagina_inicial = direccion_base / memoria.tamanio_marco;
     int offset_inicial = direccion_base % memoria.tamanio_marco;
     int bytes_restantes = tam;
@@ -781,14 +800,17 @@ void ejecutar_tag(char* origen, char* destino, int qid) {
         case RESULTADO_OK:
             log_info(loggerWorker, "Query %d: Instrucción TAG exitosa: [%s:%s] -> [%s:%s]",
                 qid, file_origen, tag_origen, file_destino, tag_destino);
+                return true;
             break;
         case ERROR_FILE_INEXISTENTE:
             log_info(loggerWorker, "Query %d: Instrucción TAG fallida: El file %s no existe en Storage.",
                 qid, file_origen);
+                return false;
             break;
         case ERROR_TAG_INEXISTENTE:
             log_info(loggerWorker, "Query %d: Instrucción TAG fallida: El tag %s no existe en Storage.",
                 qid, tag_origen);
+                return false;
             break;
         default:
             log_info(loggerWorker, "Query %d: Instrucción TAG fallida: Error desconocido.", qid);
@@ -804,15 +826,86 @@ void ejecutar_tag(char* origen, char* destino, int qid) {
 
 // COMMIT
 void ejecutar_commit(char* file_tag, int qid){
+    char* nombreArch = strdup(file_tag);
+    char* nombreTag = strchr(nombreArch, ':');
+    if(nombreTag != NULL) {
+            *nombreTag = '\0'; // Separa el nombre del archivo del tag
+            nombreTag++;       // Avanza al inicio del tag
+        }
+    // --- 1. Ejecutar FLUSH implícito (Obligatorio) ---
+    if (!ejecutar_flush(file_tag, qid)) {
+        log_error(loggerWorker, "Query %d: COMMIT falló porque el FLUSH implícito fracasó.", qid);
+        return false; // Error en el flush
+    }
+
+    log_info(loggerWorker, "Query %d: Iniciando COMMIT para %s", qid, file_tag);
+    t_paquete* paquete = crear_paquete(COMMIT);
+    agregar_a_paquete(paquete, &qid, sizeof(int));
+    agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
+    agregar_a_paquete_string(paquete, nombreTag, strlen(nombreTag));
     
+    enviar_paquete(paquete, socket_storage);
+    eliminar_paquete(paquete);
+
+
+    op_code respuesta = recibir_operacion(socket_storage);
+
+    if (respuesta != RESULTADO_OK) {
+        log_error(loggerWorker, "Query %d: COMMIT falló. Storage respondió: %s", 
+                  qid, respuesta);
+        notificar_fin_query_a_master(qid, "ERROR_COMMIT_STORAGE");
+        return false; // FRACASO
+    }
+    return true; // EXITO
 }
 
 
 // FLUSH
-//Persiste todas las modificaciones de un File:Tag en Memoria Interna
+//Persiste todas las modificaciones de un File:Tag en Memoria Interna. Falta ejecutarlo en desalojo
 void ejecutar_flush(char* file_tag, int qid){
     log_info(loggerWorker, "Query %d: Iniciando FLUSH para %s", qid, file_tag);
+    pthread_mutex_lock(&mutex_tablas_paginas);
+    t_tabla_paginas* tabla = dictionary_get(tablas_de_paginas, file_tag);
+    
+    pthread_mutex_unlock(&mutex_tablas_paginas);
+    
+    // Si no hay tabla, no hay nada que flushear.
+    if (!tabla) {
+        log_warning(loggerWorker, "Query %d: FLUSH para %s no encontró tabla (nada que hacer).", qid, file_tag);
+        return true; // No es un error
+    }
+    bool flush_exitoso = true;
+    int paginas_flusheadas = 0;
 
+    // --- 2. Recorrer todas las páginas de la tabla ---
+    for (int i = 0; i < list_size(tabla->paginas); i++) {
+        pthread_mutex_lock(&mutex_tablas_paginas);
+        t_pagina* pagina = list_get(tabla->paginas, i);
+        pthread_mutex_unlock(&mutex_tablas_paginas);
+        // --- 3. Buscar páginas "sucias" y presentes ---
+        if (pagina->presente && pagina->modificado) {
+            
+            log_info(loggerWorker, "Query %d: FLUSH: Página %d de %s está 'sucia'. Enviando a Storage...", qid, pte->num_pagina, file_tag);
+
+            // Obtenemos el marco físico correspondiente, va un mutex creo
+            int num_marco = pagina->marco;
+            t_marco* marco_fisico = &memoria.marcos[num_marco];
+
+            // ya se encarga de parsear el file_tag del marco y enviar los datos)
+            if (!enviar_bloque_a_storage(qid, marco_fisico)) {
+                // Si falla el envío, marcamos el error pero continuamos
+                log_error(loggerWorker, "Query %d: FLUSH: Falló el envío de la página %d.", qid, pagina->num_pagina);
+                flush_exitoso = false;
+            } else {
+                // Si el envío fue exitoso, la página lógica ya no está "sucia"
+                pagina->modificado = false;
+                paginas_flusheadas++;
+            }
+        }
+    }
+
+    log_info(loggerWorker, "Query %d: FLUSH para %s completado. %d páginas guardadas.", qid, file_tag, paginas_flusheadas);
+    return flush_exitoso;
 }
 
 // DELETE 

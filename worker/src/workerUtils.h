@@ -95,17 +95,22 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
 
 void inicializar_memoria_interna();
 //============= EJECUTAR INSTRUCCIONES ==============
-void ejecutar_create(char* nombreArch, char* nombreTag, int qid);
-void ejecutar_truncate(char* nombreArch, char* nombreTag, int qid, int nuevo_tam);
-void ejecutar_write(char* nombreArch, char* nombreTag, int direccionBase, char* contenido, int qid);
+void ejecutar_create(char* file_tag, int qid);
+void ejecutar_truncate(char*  file_tag, int qid, int nuevo_tam);
+void ejecutar_write(char*  file_tag, int direccionBase, char* contenido, int qid);
+void ejecutar_read(char*  file_tag, int direccionBase, int tamanio, int qid);
+//void ejecutar_delete(char*  file_tag, int qid);
+void ejecutar_commit(char* file_tag, int qid);
+void ejecutar_tag(char* origen, char* destino, int qid);
+void ejecutar_flush(char* file_tag, int qid);
 
 int seleccionar_victima(int quid);
 int seleccionar_bloque_victima();
 int reemplazo_clock_modificado();
 int reemplazo_lru();
 
-//void enviar_pagina_a_storage(t_marco* bloque);
-//void solicitar_pagina_a_storage(char* tag, int bloque_id, t_marco* destino);
+void enviar_bloque_a_storage(t_marco* bloque);
+void solicitar_bloque_a_storage(char* tag, int bloque_id, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
 
 void inicializar_tablas_paginas();
