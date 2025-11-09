@@ -88,33 +88,35 @@ static void trim_newline(char* s);
 static bool ejecutar_instruccion(const char* instruccion, int qid, int pc);
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
 tipo_instruccion obtener_instruccion(const char* op);
-static void notificar_fin_query_a_master(int qid, const char* motivo);
 
 //t_bloque_memoria* buscar_bloque(char* tag, int bloque_id);
 t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid);
 
 void inicializar_memoria_interna();
 //============= EJECUTAR INSTRUCCIONES ==============
-void ejecutar_create(char* file_tag, int qid);
-void ejecutar_truncate(char*  file_tag, int qid, int nuevo_tam);
-void ejecutar_write(char*  file_tag, int direccionBase, char* contenido, int qid);
-void ejecutar_read(char*  file_tag, int direccionBase, int tamanio, int qid);
+bool ejecutar_create(char* file_tag, int qid);
+bool ejecutar_truncate(char*  file_tag, int qid, int nuevo_tam);
+bool ejecutar_write(char*  file_tag, int direccionBase, char* contenido, int qid);
+bool ejecutar_read(char*  file_tag, int direccionBase, int tamanio, int qid);
 //void ejecutar_delete(char*  file_tag, int qid);
-void ejecutar_commit(char* file_tag, int qid);
-void ejecutar_tag(char* origen, char* destino, int qid);
-void ejecutar_flush(char* file_tag, int qid);
+bool ejecutar_commit(char* file_tag, int qid);
+bool ejecutar_tag(char* origen, char* destino, int qid);
+bool ejecutar_flush(char* file_tag, int qid);
 
 int seleccionar_victima(int quid);
 int seleccionar_bloque_victima();
 int reemplazo_clock_modificado();
 int reemplazo_lru();
 
-void enviar_bloque_a_storage(t_marco* bloque);
-void solicitar_bloque_a_storage(char* tag, int bloque_id, t_marco* destino);
+void notificar_fin_query_a_master(int qid, int motivo_op_code);
+
+bool enviar_bloque_a_storage(int qid, t_marco* bloque);
+bool solicitar_pagina_a_storage(int qid, char* file_tag_completo, int pagina_logica, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
 
 void inicializar_tablas_paginas();
 void liberar_tablas_paginas();
 t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag);
 t_pagina* buscar_pagina(t_tabla_paginas* tabla, int num_pagina);
+t_marco* obtener_marco_de_pagina(char* file_tag, int num_pagina);
 #endif

@@ -243,7 +243,7 @@ void* manejar_ejecutar(void *buffer) {
 }*/
 //prueba
 
-static void notificar_fin_query_a_master(int qid, int motivo_op_code) { 
+void notificar_fin_query_a_master(int qid, int motivo_op_code) { 
     t_paquete* p = crear_paquete(WORKER_TO_MASTER_END); // (Necesitas este op_code en protocolo.h)
     agregar_a_paquete(p, &qid, sizeof(int));
     agregar_a_paquete(p, &qid, sizeof(int));
@@ -290,7 +290,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
         if (fgets(linea, sizeof(linea), file) == NULL) {
             // El PC está fuera de los límites del archivo
             log_info(loggerWorker, "Query %d: PC %d fuera de rango (EOF).", qid, pc_inicial);
-            notificar_fin_query_a_master(qid, "EOF");
+            // revisar porque no tenemos un int notificar_fin_query_a_master(qid, "EOF");
             fclose(file);
             return;
         }
@@ -309,7 +309,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
         
         if (es_end) {
             log_info(loggerWorker, "##Query %d: Query finalizada (END)", qid);
-            notificar_fin_query_a_master(qid, "OK");
+            // revisar para mandar bien por el code notificar_fin_query_a_master(qid, "OK");
             break; // Salir del bucle while
         }
         
@@ -340,7 +340,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     // Si salimos del bucle y no fue por 'END' (es_end=false), fue por Fin de Archivo (EOF)
     if (!es_end) {
         log_info(loggerWorker, "##Query %d: Fin de archivo alcanzado (EOF).", qid);
-        notificar_fin_query_a_master(qid, "EOF");
+        // revisar notificar_fin_query_a_master(qid, "EOF");
     }
     
     fclose(file);
@@ -374,7 +374,7 @@ tipo_instruccion obtener_instruccion(const char* op) {
 
 //Devuelve 'true' si la instrucción fue END, 'false' en cualquier otro caso.
 static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
-    if(!instruccion) return false;
+     if(!instruccion) return false;
     
     char* copia = strdup(instruccion);
     trim_newline(copia);
@@ -392,6 +392,15 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
 
     bool fue_end = false;
     bool exito_operacion = true; 
+    char* file_tag = NULL;
+    char* dir_str = NULL;
+    char* tam_str = NULL;
+    char* contenido = NULL;
+    char* origen = NULL;
+    char* destino = NULL;
+    int direccion = 0;
+    int tam = 0;
+    int nuevo_tam = 0;
 
     tipo_instruccion inst_tipo = obtener_instruccion(op);
 
@@ -412,16 +421,16 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
             }
             break;
         case TRUNCATE:
-            char* tam_str = strtok(NULL, " "); // agarro el nuevo tamaño
-            int nuevo_tam = (tam_str != NULL) ? atoi(tam_str) : 0;
+            tam_str = strtok(NULL, " "); //
+            nuevo_tam = (tam_str != NULL) ? atoi(tam_str) : 0;
             if (! ejecutar_truncate(file_tag, nuevo_tam, qid)) { 
                 exito_operacion = false; // Marcamos que la operación falló
             }
             break;
         case WRITE:
-            char* dir_str = strtok(NULL, " "); // agarro la direccion
-            char* contenido = strtok(NULL, ""); // agarro el contenido
-            int direccion = (dir_str != NULL) ? atoi(dir_str) : 0;
+            dir_str = strtok(NULL, " ");
+            contenido = strtok(NULL, "");
+            direccion = (dir_str != NULL) ? atoi(dir_str) : 0;
             // RETARDO_MEMORIA: Solo se aplica en READ y WRITE
             usleep((useconds_t)retardo_memoria * 1000);
             if (!ejecutar_write(file_tag, direccion, contenido, qid)) { 
@@ -429,10 +438,10 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
             }
             break;
         case READ:
-            char* dir_str = strtok(NULL, " ");
-            char* tam_str = strtok(NULL, " ");
-            int direccion = (dir_str != NULL) ? atoi(dir_str) : 0;
-            int tam = (tam_str != NULL) ? atoi(tam_str) : 0;
+        dir_str = strtok(NULL, " ");
+            tam_str = strtok(NULL, " ");
+            direccion = (dir_str != NULL) ? atoi(dir_str) : 0;
+            tam = (tam_str != NULL) ? atoi(tam_str) : 0;
 
             // RETARDO_MEMORIA: Solo se aplica en READ y WRITE
             usleep((useconds_t)retardo_memoria * 1000);
@@ -484,7 +493,7 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
 // ==== Funciones de ejecucion de instrucciones ====
 // Existe la funcion de agregar a paquete un string tmb!! En protocolo
 // CREATE
-void ejecutar_create(char* file_tag, int qid){
+bool ejecutar_create(char* file_tag, int qid){
     char* nombreArch = strdup(file_tag);
     char* nombreTag = strchr(nombreArch, ':');
 
@@ -495,7 +504,7 @@ void ejecutar_create(char* file_tag, int qid){
     t_paquete* paquete = crear_paquete(CREATE);
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
-    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag))
+    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag));
     int tamanio = 0;
     agregar_a_paquete(paquete, &tamanio, sizeof(int));
 
@@ -506,26 +515,27 @@ void ejecutar_create(char* file_tag, int qid){
     //Esperamos la confirmacion de storage (errores en las operaciones) 
     if(recibir_operacion(socket_storage) == ERROR_FILE_PREEXISTENTE){
         log_info(loggerWorker, "Instrucción CREATE fallida: El tag %s ya existe en Storage.", file_tag);
-        return;
+        return false;
     }
     
     if(recibir_operacion(socket_storage) == RESULTADO_OK){
         log_info(loggerWorker, "Instrucción CREATE exitosa para el tag: %s", file_tag);
+        return true;
     }
 }
 
 // TRUNCATE
-void ejecutar_truncate(char* tag, int nuevo_tam, int qid) {
+bool ejecutar_truncate(char* tag, int nuevo_tam, int qid) {
     log_info(loggerWorker, "TRUNCATE solicitado en tag: %s, nuevo tamaño: %d", tag, nuevo_tam); // LOG NO OBLIGATORIO
     
     if(tamanio_bloque_storage <= 0) {
         log_info(loggerWorker, "Error: Tamaño de bloque de Storage no válido. No se puede ejecutar TRUNCATE.");
-        return;
+        return false;
     }
     //logica multiplo
     if(nuevo_tam % tamanio_bloque_storage != 0) {
         log_info(loggerWorker, "Error: El nuevo tamaño %d NO es múltiplo del tamaño de bloque %d. TRUNCATE abortado.", nuevo_tam, tamanio_bloque_storage);
-        return;
+        return false;
     }
     char* nombreArch = strdup(file_tag);
     char* nombreTag = strchr(nombreArch, ':');
@@ -538,7 +548,7 @@ void ejecutar_truncate(char* tag, int nuevo_tam, int qid) {
     t_paquete* paquete = crear_paquete(TRUNCATE);
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
-    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag))
+    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag));
     agregar_a_paquete(paquete, &nuevo_tam, sizeof(int));
     enviar_paquete(paquete, socket_storage);  // se envia a Storage
     eliminar_paquete(paquete);
@@ -550,22 +560,27 @@ void ejecutar_truncate(char* tag, int nuevo_tam, int qid) {
     switch(resultado){
         case ERROR_FILE_INEXISTENTE:
             log_info(loggerWorker, "Instrucción TRUNCATE fallida: El file %s no existe en Storage.", tag);
-            return;
+            //notificar query
+            return false;
             break;
         case ERROR_TAG_INEXISTENTE:
             log_info(loggerWorker, "Instrucción TRUNCATE fallida: El tag %s no existe en Storage.", tag);
-            return;
+             //notificar query
+            return false;
             break;
         case ERROR_LINK_FALLIDO:
             log_info(loggerWorker, "Instrucción TRUNCATE fallida para el tag: %s", tag);
-            return;
+             //notificar query
+            return false;
             break;
         case ERROR_ESCRITURA_NO_PERMITIDA:
             log_info(loggerWorker, "Instrucción TRUNCATE fallida: Truncar el file:tag: %s que se encuentre en estado COMMITED", tag);
+             //notificar query
             return;
             break;
         case RESULTADO_OK:
             log_info(loggerWorker, "Instrucción TRUNCATE exitosa para el tag: %s", tag);
+            return true;
             break;
         default:
             break;
@@ -575,7 +590,7 @@ void ejecutar_truncate(char* tag, int nuevo_tam, int qid) {
 }
 
 // WRITE char* nombreArch, char* nombreTag,
-void ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
+bool ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
 
     usleep((useconds_t)retardo_memoria * 1000);  // Retardo por escritura en memoria
     // Y QUE PASA SI NO ESTA CREADO ESE FILE TAG?
@@ -620,6 +635,8 @@ void ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
 
     log_info(loggerWorker, "Query %d: Accion: ESCRIBIR - Direccion Fisica: %d - Valor: %s", 
         qid, direccion_base, contenido); // LOG OBLIGATORIO
+
+    return true;
 }
 
 // Maneja un page fault para la página lógica dada char* nombreArch, char* nombreTag,
@@ -696,7 +713,7 @@ bool ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
     int offset_inicial = direccion_base % memoria.tamanio_marco;
     int bytes_restantes = tam;
 
-    char buffer_lectura = malloc(tam); // Buffer para almacenar los datos leídos
+    char* buffer_lectura = malloc(tam); // Buffer para almacenar los datos leídos
     int pos_buffer = 0;                // Posición actual en el buffer de lectura
 
     while(bytes_restantes > 0) {
@@ -706,7 +723,7 @@ bool ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
         // ¿Page fault?
         if(marco == -1) {
             log_info(loggerWorker, "Page fault en READ: %s - Pagina %d", file_tag, pagina_inicial);
-            marco = solicitar_bloque_a_storage(qid, file_tag, pagina_inicial, marco); // CAMBIIAR ESTO
+            //marco = solicitar_bloque_a_storage(qid, file_tag, pagina_inicial, marco); // CAMBIIAR ESTO
         }
 
         t_marco* frame = &memoria.marcos[marco];
@@ -730,7 +747,7 @@ bool ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
     }
 
     // Enviar contenidos al Master
-    t_paquete* paquete = crear_paquete(READ_RESULTADO);
+    t_paquete* paquete = crear_paquete(READ); //no sé si el nombre está bien
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete(paquete, &tam, sizeof(int));
     agregar_a_paquete(paquete, buffer_lectura, tam);
@@ -741,13 +758,13 @@ bool ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
              qid, direccion_base, buffer_lectura); // LOG OBLIGATORIO
 
     free(buffer_lectura);
-
+    return true;
 }
 
 // TODO: completar las demas instrucciones (con el tema de incorporar memoria interna y demas)
 
 // TAG
-void ejecutar_tag(char* origen, char* destino, int qid) {
+bool ejecutar_tag(char* origen, char* destino, int qid) {
     if (!origen || !destino) {
         log_error(loggerWorker, "Query %d: Parámetros inválidos en TAG.", qid);
         return;
@@ -805,11 +822,13 @@ void ejecutar_tag(char* origen, char* destino, int qid) {
         case ERROR_FILE_INEXISTENTE:
             log_info(loggerWorker, "Query %d: Instrucción TAG fallida: El file %s no existe en Storage.",
                 qid, file_origen);
+                //notificar query
                 return false;
             break;
         case ERROR_TAG_INEXISTENTE:
             log_info(loggerWorker, "Query %d: Instrucción TAG fallida: El tag %s no existe en Storage.",
                 qid, tag_origen);
+                //notificar query
                 return false;
             break;
         default:
@@ -825,7 +844,7 @@ void ejecutar_tag(char* origen, char* destino, int qid) {
 
 
 // COMMIT
-void ejecutar_commit(char* file_tag, int qid){
+bool ejecutar_commit(char* file_tag, int qid){
     char* nombreArch = strdup(file_tag);
     char* nombreTag = strchr(nombreArch, ':');
     if(nombreTag != NULL) {
@@ -853,7 +872,7 @@ void ejecutar_commit(char* file_tag, int qid){
     if (respuesta != RESULTADO_OK) {
         log_error(loggerWorker, "Query %d: COMMIT falló. Storage respondió: %s", 
                   qid, respuesta);
-        notificar_fin_query_a_master(qid, "ERROR_COMMIT_STORAGE");
+        notificar_fin_query_a_master(qid, respuesta);
         return false; // FRACASO
     }
     return true; // EXITO
@@ -862,7 +881,7 @@ void ejecutar_commit(char* file_tag, int qid){
 
 // FLUSH
 //Persiste todas las modificaciones de un File:Tag en Memoria Interna. Falta ejecutarlo en desalojo
-void ejecutar_flush(char* file_tag, int qid){
+bool ejecutar_flush(char* file_tag, int qid){
     log_info(loggerWorker, "Query %d: Iniciando FLUSH para %s", qid, file_tag);
     pthread_mutex_lock(&mutex_tablas_paginas);
     t_tabla_paginas* tabla = dictionary_get(tablas_de_paginas, file_tag);
@@ -885,7 +904,7 @@ void ejecutar_flush(char* file_tag, int qid){
         // --- 3. Buscar páginas "sucias" y presentes ---
         if (pagina->presente && pagina->modificado) {
             
-            log_info(loggerWorker, "Query %d: FLUSH: Página %d de %s está 'sucia'. Enviando a Storage...", qid, pte->num_pagina, file_tag);
+            log_info(loggerWorker, "Query %d: FLUSH: Página %d de %s está 'sucia'. Enviando a Storage...", qid, pagina->num_pagina, file_tag);
 
             // Obtenemos el marco físico correspondiente, va un mutex creo
             int num_marco = pagina->marco;
@@ -1105,14 +1124,14 @@ int seleccionar_bloque_victima() {
 
 
 //Lo mejor sería que se llame bloque, porque lo mque le pedimos es el vontenido de un bloque ya que storage utiliza eso, no paginasx
-bool solicitar_bloque_a_storage(int qid, char* tag, t_marco* destino) {
+bool solicitar_pagina_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino) {
     
-    log_info(loggerWorker, "Query %d: Solicitando bloque a Storage - File: %s, Bloque: %d", qid, tag, bloque_id);
+    log_info(loggerWorker, "Query %d: Solicitando bloque a Storage - File: %s, Bloque: %d", qid, file_tag_completo, pagina_logica);
 
     t_paquete* paquete = crear_paquete(READ); 
     
     agregar_a_paquete(paquete, &qid, sizeof(int));
-    char* nombreArch = strdup(tag);
+    char* nombreArch = strdup(file_tag);
     char* nombreTag = strchr(nombreArch, ':');
 
     if(nombreTag != NULL) {
@@ -1120,7 +1139,7 @@ bool solicitar_bloque_a_storage(int qid, char* tag, t_marco* destino) {
         nombreTag++;       // Avanza al inicio del tag
     }
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
-    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag))
+    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag));
     
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
@@ -1130,9 +1149,9 @@ bool solicitar_bloque_a_storage(int qid, char* tag, t_marco* destino) {
     
     if (op != RESULTADO_OK) {
         //ACÁ HAY QUE MOSTRAR EL QUE NO ES SEGÚN EL ERROR
-        log_error(loggerWorker, "Error al recibir bloque solicitado de Storage para %s:%d", tag, bloque_id);
+        log_error(loggerWorker, "Error al recibir bloque solicitado de Storage para %s", file_tag)g;
         //REVISAR NOTIFICAR QUERY
-        notificar_fin_query_a_master(qid, "ERROR_LECTURA_STORAGE");
+        notificar_fin_query_a_master(qid, op);
         return false;
     }
 
@@ -1149,17 +1168,19 @@ bool solicitar_bloque_a_storage(int qid, char* tag, t_marco* destino) {
     free(buffer);
 
     // Worker actualiza la metadata del marco
-    strcpy(destino->file_tag, tag);
+    strcpy(destino->file_tag, file_tag);
+    // (Esto es vital para cuando este marco sea una víctima)
+    destino->pagina_logica = pagina_logica;
+    
     destino->ocupado = true;
     destino->modificado = false;
     destino->en_uso = true;
     destino->ultima_ref = time(NULL);
-
-    log_info(loggerWorker, "Bloque [%s:%d] cargado en memoria desde Storage.", tag, bloque_id);
+    
     return true;
 }
 
-void enviar_bloque_a_storage(t_marco* bloque, int qid){
+bool enviar_bloque_a_storage(t_marco* bloque, int qid){
     
     char* nombreArch = strdup(bloque->file_tag);
     char* nombreTag = strchr(nombreArch, ':');
@@ -1173,7 +1194,7 @@ void enviar_bloque_a_storage(t_marco* bloque, int qid){
     
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
-    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag))
+    agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag));
     agregar_a_paquete(paquete, &bloque->pagina_logica, sizeof(int));
 
     // Calculamos la dirección de los datos en el buffer principal
@@ -1192,7 +1213,7 @@ void enviar_bloque_a_storage(t_marco* bloque, int qid){
     
     if (respuesta != RESULTADO_OK) { // (Necesitas STORAGE_OK en protocolo.h)
         log_error(loggerWorker, "QuerY: Storage respondió ERROR (%d) al escribir bloque.", respuesta);
-        notificar_fin_query_a_master( "ERROR_ESCRITURA_STORAGE"); // Aborta la query
+        notificar_fin_query_a_master(qid,respuesta); // Aborta la query
         
         return false; // Devuelve FRACASO
     }
@@ -1275,8 +1296,8 @@ int reemplazo_lru(int qid) {
             break;
         }
         
-        if(m.ultima_ref < min_ref) {
-            min_ref = m.ultima_ref;
+       if(m->ultima_ref < min_ref) {
+            min_ref = m->ultima_ref;
             victima = i;
         }
     }
@@ -1320,10 +1341,16 @@ t_pagina* buscar_pagina(t_tabla_paginas* tabla, int num_pagina) {
 t_marco* obtener_marco_de_pagina(char* file_tag, int num_pagina) {
     t_tabla_paginas* tabla = obtener_o_crear_tabla_paginas(file_tag);
     t_pagina* pagina = buscar_pagina(tabla, num_pagina);
+    
     if(pagina && pagina->presente) {
-        pagina->marco->en_uso = true;
-        pagina->marco->ultima_ref = time(NULL);
-        return pagina->marco;
+        int num_marco = pagina->marco; // 1. Obtiene el NÚMERO de marco
+        t_marco* marco_fisico = &memoria.marcos[num_marco]; // 2. Busca el marco FÍSICO
+
+        // 3. Actualiza el marco FÍSICO
+        marco_fisico->en_uso = true;
+        marco_fisico->ultima_ref = time(NULL);
+        
+        return marco_fisico; // 4. Devuelve el puntero al marco FÍSICO
     }
     return NULL; // Pagina no está en memoria
 }
