@@ -121,8 +121,8 @@ t_resultado_storage op_commit(char* nombreArch, char *nombreTag, int query_id);
 t_resultado_storage op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido, int query_id);
 t_resultado_storage op_read(char* nombreArch, char *nombreTag, int nroBloque, char **contenido, int query_id);
 t_resultado_storage op_delete(char* nombreArch, char *nombreTag, int query_id);
-t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int query_id);
-
+//t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int query_id);
+t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino,char *nombreNuevoTag, int query_id);
 void crear_metadata(char* path, char* nuevoPath);
 void destruir_metadata(t_metadata* meta);
 t_metadata* leer_metadata(char* archivo, char* nombreTag);

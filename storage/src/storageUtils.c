@@ -233,7 +233,7 @@ void atenderTag(int fd_conexion, void* buffer){
     nombreNuevoTag[tamNuevoTag] = '\0';
     free(buffer);
 
-    t_resultado_storage resultado = op_tag(nombreArch, nombreTag, nombreNuevoTag,QID);
+    //t_resultado_storage resultado = op_tag(nombreArch, nombreTag, nombreNuevoTag,QID);
     if(nombreArch)
         free(nombreArch);
     if(nombreTag)
@@ -528,6 +528,9 @@ void initialFile(){
     op_write("initial_file","BASE", 0,escrituraInicial, 0);
     free(escrituraInicial);
     op_commit("initial_file","BASE", 0);
+    op_create("file2","otroTag", 0);
+    op_truncate("initial_file","BASE", tam_bloq, 0);
+    op_tag("initial_file","BASE","file2","BASE2", 0);
     //op_delete("initial_file","BASE", 0);
     //op_tag("initial_file","BASE","BASE2");
     
@@ -742,7 +745,8 @@ t_resultado_storage op_truncate(char* nombreArch, char *nombreTag, int nuevoTama
     return RESULTADO_OK;
 }
 //cp [source] [destination]: Copy files or directories. podemos usar la funcion system para correr este comando
-t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int query_id){
+
+/*t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int query_id){
     usleep(retardo_operacion);
     t_tag *tagOrigen = buscar_Tag_Arch(nombreArch,nombreTagOrigen);
     if(tagOrigen){
@@ -754,6 +758,26 @@ t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char *nombre
         log_info(loggerStorage, "comando : %s",cmd);
         system(cmd);
         crear_copia_tag(nombreArch,tagOrigen,nombreNuevoTag);
+        return RESULTADO_OK;
+    }
+    return ERROR_TAG_INEXISTENTE;
+}*/
+t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino,char *nombreNuevoTag, int query_id){
+    usleep(retardo_operacion);
+    t_fcb* fcbDestino = dictionary_get(diccionario_archivos, nombreArchDestino);
+    if(!fcbDestino){
+        return ERROR_FILE_INEXISTENTE;
+    }
+    t_tag *tagOrigen = buscar_Tag_Arch(nombreArch,nombreTagOrigen);
+    if(tagOrigen){
+        char pathArch[256];
+        sprintf(pathArch,"%s/%s/%s",path_files,nombreArchDestino,nombreNuevoTag);
+        log_info(loggerStorage, "nuevo path : %s",pathArch);
+        char cmd[256];
+        sprintf(cmd,"cp -r %s %s",tagOrigen->pathTag,pathArch);
+        log_info(loggerStorage, "comando : %s",cmd);
+        system(cmd);
+        crear_copia_tag(nombreArchDestino,tagOrigen,nombreNuevoTag);
         return RESULTADO_OK;
     }
     return ERROR_TAG_INEXISTENTE;
@@ -1031,7 +1055,7 @@ void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     nuevoTag->logBlocks = tagOrigen->logBlocks;
     nuevoTag->physicalBlocks = list_duplicate (tagOrigen->physicalBlocks);
     t_metadata *meta = leer_metadata(nombreArch, nombreNuevoTag);
-
+    meta->blocks = nuevoTag->physicalBlocks;
     meta->estado = strdup("WORK_IN_PROGRESS");
     guardar_metadata(meta, nombreArch, nombreNuevoTag);
     destruir_metadata(meta);
@@ -1133,8 +1157,8 @@ void crear_metadata (char* path, char* nuevoPath) {
         log_error(loggerStorage, "Error al crear el archivo 'metadata.config': %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
-    fputs("TAMAÑO=0\n",archivo);
     fputs("BLOCKS=[]\n",archivo);
+    fputs("TAMAÑO=0\n",archivo);
     fputs("ESTADO=WORK_IN_PROGRESS\n",archivo);
 
     fclose(archivo);
