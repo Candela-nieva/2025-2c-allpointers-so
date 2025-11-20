@@ -498,12 +498,12 @@ void crear_BlocksHashIndex() {
 
 void crear_physical_blocks() {
     int anchoEntrada = calcularAncho();
-    char nombreArch[256];
+    char nombreArch[512];
     char nroBloque[32];
     for(int i=0; i < cantBloq; i++){
         sprintf(nroBloque,"%0*d", anchoEntrada, i);
         sprintf(nombreArch, "%s/block%s.dat", path_blocks, nroBloque);
-        
+        //snprintf(nombreArch, sizeof(nombreArch),"%s/block%s.dat", path_blocks, nroBloque);
         FILE *archBloque = fopen(nombreArch, "w+");
         if (!archBloque) {
             log_error(loggerStorage, "Error al crear '%s': %s", nombreArch, strerror(errno));
@@ -745,10 +745,10 @@ t_motivo op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino
     }
     t_tag *tagOrigen = buscar_Tag_Arch(nombreArch,nombreTagOrigen);
     if(tagOrigen){
-        char pathArch[256];
+        char pathArch[512];
         sprintf(pathArch,"%s/%s/%s",path_files,nombreArchDestino,nombreNuevoTag);
         log_info(loggerStorage, "nuevo path : %s",pathArch);
-        char cmd[256];
+        char cmd[520];
         sprintf(cmd,"cp -r %s %s",tagOrigen->pathTag,pathArch);
         log_info(loggerStorage, "comando : %s",cmd);
         system(cmd);
@@ -829,7 +829,7 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
                 //Abrimos en modo append (a) para no borrar
                 FILE *archHash = fopen(path_blocks_hash, "a");
                 if (archHash) {
-                    char nuevaEntrada[256];
+                    char nuevaEntrada[512];
                     sprintf(nuevaEntrada, "%s=%s\n",hash,Bloque);
                     fputs(nuevaEntrada, archHash);
                     fclose(archHash);
