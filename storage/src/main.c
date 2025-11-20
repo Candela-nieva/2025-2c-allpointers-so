@@ -3,13 +3,15 @@
 int main(int argc, char* argv[]) {
     saludar("storage");
     config_storage = "storage.config";
-    inicializar_config();
+    char[256] = "MATERIAS:BASE"
+
+    /*inicializar_config();
     cargar_config();
     crear_logger();
 
     
     inicializar_montaje();
 
-    iniciar_servidor_multihilo();
+    iniciar_servidor_multihilo();*/
     return 0;
 }
