@@ -222,6 +222,7 @@ void atender_Worker(int fd){
                 memcpy(&tamCont, buffer + offset, sizeof(int));
                 contenido = malloc(tamCont + 1);
                 offset += sizeof(int);
+                
                 memcpy(contenido, buffer + offset,tamCont);
                 contenido[tamCont] = '\0';
 
@@ -253,21 +254,9 @@ void atender_Worker(int fd){
     }
 }
 
-
-
 void enviar_mensaje_exit(int socketQuery, t_motivo motivo){
     t_paquete *paquete = crear_paquete(MASTER_TO_QC_END);
-    switch (motivo)
-    {
-        case QUERY_EXIT:
-            char *motivoFinQuery = "FIN DE QUERY";
-            agregar_a_paquete_string(paquete, motivoFinQuery, strlen(motivoFinQuery));
-            break;
-        default:
-            char *motivoDesconexion = "DESCONEXION WORKER";
-            agregar_a_paquete_string(paquete, motivoDesconexion, strlen(motivoDesconexion));
-            break;
-    }
+    agregar_a_paquete(paquete, &motivo, sizeof(int));
     enviar_paquete(paquete, socketQuery);
     eliminar_paquete(paquete);
 }
@@ -678,9 +667,7 @@ void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker) {
     agregar_a_paquete(paquete, &(qcb->qid), sizeof(int));
     agregar_a_paquete(paquete, &(qcb->pc), sizeof(int));
     agregar_a_paquete_string(paquete, qcb->ruta_arch, strlen(qcb->ruta_arch));
-    log_info(loggerMaster, "PAQUETE CREADO : ENVIANDO");
     enviar_paquete(paquete, worker->socket);
-    log_info(loggerMaster, "PAQUETE CREADO : ENVIADO!!!!");
     eliminar_paquete(paquete);
 }    
 

@@ -101,17 +101,38 @@ void recibir_mensaje_read(int socket_master){
 }
 
 void recibir_mensaje_exit(int socket_master){
-    void *buffer = recibir_buffer(socket_master);
-    char *motivo;
-    int len;
-    int offset = 0;
-    memcpy(&(len),buffer + offset, sizeof(int));
-    offset += sizeof(int);
-    motivo = malloc(len + 1);
-    memcpy(motivo,buffer + offset, len);
-    motivo[len] = '\0';
-    log_info(loggerQueryCTRL, "## Query Finalizada - <%s>", motivo); // LOG OBLIGATORIO
-    free(motivo);
+    int motivo_int = recibir_operacion(socket_master)
+
+    t_motivo motivo = (t_motivo) motivo_int;
+
+    const char* motivo = obtener_motivo_string(motivo);
+
+    // Log obligatorio
+    log_info(logger, "## Query Finalizada - %s", motivo);
+
+    // Cerrar la conexión y terminar el Query Control
+    close(socket_master);
+}
+
+const char* obtener_motivo_string(t_motivo motivo) {
+    switch (motivo) {
+        case RESULTADO_OK:                 return "RESULTADO EXITOSO"
+        case ERROR_FILE_INEXISTENTE:       return "FILE_INEXISTENTE";
+        case ERROR_TAG_INEXISTENTE:        return "TAG_INEXISTENTE";
+        case ERROR_FILE_PREEXISTENTE:      return "FILE_YA_EXISTE";
+        case ERROR_TAG_PREEXISTENTE:       return "TAG_YA_EXISTE";
+        case ERROR_LECTURA_NO_PERMITIDA:   return "LECTURA_RECHAZADA_COMMITED";
+        case ERROR_ESCRITURA_NO_PERMITIDA: return "ESCRITURA_RECHAZADA_COMMITED";
+        case ERROR_ESPACIO_INSUFICIENTE:   return "STORAGE_SIN_ESPACIO";
+        case ERROR_FUERA_DE_LIMITE:        return "ACCESO_FUERA_DE_LIMITE";
+        case ERROR_NO_PUDO_ABRIR_ARCHIVO:  return "FALLO_APERTURA_ARCHIVO";
+        case ERROR_LECTURA_FALLIDA:        return "FALLO_LECTURA_FISICA";
+        case ERROR_LINK_FALLIDO:           return "FALLO_CREACION_LINK";
+        case ERROR_PAGE_FAULT:             return "FALLO_PAGE_FAULT";
+        case ERROR_TAMANIO_NO_MULTIPLO:    return "TAMANIO_NO_MULTIPLO";
+        case DESCONEXION_WORKER:           return "WORKER_DESCONECTADO";
+        default:                           return "MOTIVO_DESCONOCIDO";
+    }
 }
 
 // ------------------- FUNCIONES DE CONFIG Y LOGGER ------------------ //
@@ -120,7 +141,7 @@ void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_queryctrl)); //Reserva memoria
     
     if(!config_struct){
-        log_info(loggerQueryCTRL, "Fallo malloc(config_struct)\n");
+        log_info(loggerQueryCTRL, "Fallo malloc(config_struct)");
         exit(EXIT_FAILURE);
     }
     

@@ -44,32 +44,33 @@ typedef enum{
 } op_code;
 
 typedef enum {
-    CREATE,
-    TRUNCATE,
-    WRITE,
-    READ,
-    TAG,
-    COMMIT,
-    FLUSH,
-    DELETE,
-    END,
-    DESCONOCIDA // Para cualquier instrucción no reconocida
-} tipo_instruccion;
+    CREATE_FILE,
+    TRUNCATE_FILE,
+    FILE_TAG,
+    COMMIT_TAG,
+    WRITE_BLOCK,
+    READ_BLOCK,
+    DELETE_TAG
+} op_storage;
 
 typedef enum {
-    RESULTADO_OK,               // Éxito. Continúa la Query.
-    ERROR_FILE_INEXISTENTE,    // (File / Tag inexistente)
-    ERROR_TAG_INEXISTENTE,     // (Tag inexistente, para casos específicos como TAG origen)
-    ERROR_FILE_PREEXISTENTE,   // (File / Tag preexistente)
-    ERROR_TAG_PREEXISTENTE,    // (Tag preexistente, para casos específicos como TAG destino)
-    ERROR_LECTURA_NO_PERMITIDA,// (Estado COMMITED)
+    RESULTADO_OK,                 // Éxito. Continúa la Query.
+    ERROR_FILE_INEXISTENTE,       // (File / Tag inexistente)
+    ERROR_TAG_INEXISTENTE,        // (Tag inexistente, para casos específicos como TAG origen)
+    ERROR_FILE_PREEXISTENTE,      // (File / Tag preexistente)
+    ERROR_TAG_PREEXISTENTE,       // (Tag preexistente, para casos específicos como TAG destino)
+    ERROR_LECTURA_NO_PERMITIDA,   // (Estado COMMITED)
     ERROR_ESCRITURA_NO_PERMITIDA, // (Estado COMMITED)
-    ERROR_ESPACIO_INSUFICIENTE,  // (Fallo al buscar_bloque_libre)
-    ERROR_FUERA_DE_LIMITE,      // (Lectura o escritura fuera de limite)
-    ERROR_NO_PUDO_ABRIR_ARCHIVO, // (Fallo al abrir el archivo)
-    ERROR_LECTURA_FALLIDA,       // (Fallo al leer el bloque)
+    ERROR_ESPACIO_INSUFICIENTE,   // (Fallo al buscar_bloque_libre)
+    ERROR_FUERA_DE_LIMITE,        // (Lectura o escritura fuera de limite)
+    ERROR_NO_PUDO_ABRIR_ARCHIVO,  // (Fallo al abrir el archivo)
+    ERROR_LECTURA_FALLIDA,        // (Fallo al leer el bloque)
     ERROR_LINK_FALLIDO,           // (Fallo al crear el link simbólico)
-} t_resultado_storage;
+    ERROR_TAMANIO_NO_MULTIPLO,    // (No es multiplo el tamaño pedido)
+    ERROR_PAGE_FAULT,             // (Fallo page fault)
+    ERROR_DESCONOCIDO,
+    DESCONEXION_WORKER
+} t_motivo;
 
 void saludar(char* quien);
 t_paquete *crear_paquete(op_code operacion);

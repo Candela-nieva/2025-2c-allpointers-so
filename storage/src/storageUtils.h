@@ -115,19 +115,18 @@ void marcar_ocupado_en_bitmap(int nro_fisico);
 //==========FORMATO DE ENTRADAS==========
 int calcularAncho();
 //==========OPERACIONES==========
-t_resultado_storage op_create(char *nombreArch, char *nombreTag, int query_id);
-t_resultado_storage op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id);
-t_resultado_storage op_commit(char* nombreArch, char *nombreTag, int query_id);
-t_resultado_storage op_write(char* nombreArch, char *nombreTag, int direccBase, void *contenido, int query_id);
-t_resultado_storage op_read(char* nombreArch, char *nombreTag, int nroBloque, char **contenido, int query_id);
-t_resultado_storage op_delete(char* nombreArch, char *nombreTag, int query_id);
-//t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char *nombreNuevoTag, int query_id);
-t_resultado_storage op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino,char *nombreNuevoTag, int query_id);
+t_motivo op_create(char *nombreArch, char *nombreTag, int query_id);
+t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id);
+t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id);
+t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *contenido, int query_id);
+t_motivo op_read_block(char* nombreArch, char *nombreTag, int nroBloque, char **contenido, int query_id);
+t_motivo op_delete_tag(char* nombreArch, char *nombreTag, int query_id);
+t_motivo op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino,char *nombreNuevoTag, int query_id);
 void crear_metadata(char* path, char* nuevoPath);
 void destruir_metadata(t_metadata* meta);
 t_metadata* leer_metadata(char* archivo, char* nombreTag);
 void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag);
-t_resultado_storage agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0);
+t_motivo agrandarArchivo(t_metadata* meta, char* pathTag, int nro, char* path_block0);
 void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico);
 char* leer_contenido_bloque(char* path_bloque_logico);
 void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id);

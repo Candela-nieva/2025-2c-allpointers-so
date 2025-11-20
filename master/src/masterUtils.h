@@ -28,11 +28,6 @@ typedef enum {
     EXIT
 }t_estado;
 
-typedef enum {
-    QUERY_EXIT,
-    DESCONEXION_WORKER
-}t_motivo;
-
 typedef struct {
     int qid;
     int pc;

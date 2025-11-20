@@ -26,16 +26,29 @@ typedef struct {
     char* log_level;
 } t_config_worker;
 
+typedef enum {
+    CREATE,
+    TRUNCATE,
+    WRITE,
+    READ,
+    TAG,
+    COMMIT,
+    FLUSH,
+    DELETE,
+    END,
+    DESCONOCIDA // Para cualquier instrucción no reconocida
+} tipo_instruccion;
+
 // ============== Memoria Interna ================
 typedef struct {
-    char file_tag[128];     // nombre del file:tag que ocupa este marco (cadena vacia si esta libre)
+    char file_tag[128];      // nombre del file:tag que ocupa este marco (cadena vacia si esta libre)
     //int marco_id;          // ID del marco dentro del file:tag
     int pagina_logica;      
-    bool modificado;        // indica si el marco ha sido modificado (1) o no (0) (dirty bit)
-    bool en_uso;            // indica si el marco está en uso (1) o libre (0) (para CLOCK)
-    time_t ultima_ref;      // timestamp de la última referencia (para LRU)
-    //void* datos;          // puntero a los datos del bloque // CREO QUE NO VA
-    bool ocupado;           // indica si el marco está ocupado (1) o libre (0)
+    //bool modificado;       // indica si el marco ha sido modificado (1) o no (0) (dirty bit)
+    //bool en_uso;           // indica si el marco está en uso (1) o libre (0) (para CLOCK)
+    //time_t ultima_ref;     // timestamp de la última referencia (para LRU)
+    //void* datos;           // puntero a los datos del bloque // CREO QUE NO VA
+    bool ocupado;            // indica si el marco está ocupado (1) o libre (0)
 } t_marco;
 
 typedef struct {
@@ -73,7 +86,7 @@ extern t_log* loggerWorker;
 extern t_config* config;
 extern t_config_worker* config_struct; 
 extern char* config_worker;
-extern t_dictionary* tabla_de_paginas;
+extern t_dictionary* tablas_de_paginas;
 
 // =================== MAIN Y BASIC =========================
 void inicializar_config(void);
@@ -94,14 +107,16 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
 
 void inicializar_memoria_interna();
 //============= EJECUTAR INSTRUCCIONES ==============
-bool ejecutar_create(char* file_tag, int qid);
-bool ejecutar_truncate(char*  file_tag, int qid, int nuevo_tam);
-bool ejecutar_write(char*  file_tag, int direccionBase, char* contenido, int qid);
-bool ejecutar_read(char*  file_tag, int direccionBase, int tamanio, int qid);
+t_motivo ejecutar_create(char* file_tag, int qid);
+t_motivo ejecutar_truncate(char*  file_tag, int qid, int nuevo_tam);
+t_motivo ejecutar_write(char*  file_tag, int direccionBase, char* contenido, int qid);
+t_motivo ejecutar_read(char*  file_tag, int direccionBase, int tamanio, int qid);
 //void ejecutar_delete(char*  file_tag, int qid);
-bool ejecutar_commit(char* file_tag, int qid);
-bool ejecutar_tag(char* origen, char* destino, int qid);
-bool ejecutar_flush(char* file_tag, int qid);
+t_motivo ejecutar_commit(char* file_tag, int qid);
+t_motivo ejecutar_tag(char* origen, char* destino, int qid);
+t_motivo ejecutar_flush(char* file_tag, int qid);
+void manejar_errores(t_motivo motivo, int qid);
+void deserializar_fileTag(char* fileTag, char *file, char *tag);
 
 int seleccionar_victima(int quid);
 int seleccionar_bloque_victima();

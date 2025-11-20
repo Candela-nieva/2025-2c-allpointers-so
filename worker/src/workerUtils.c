@@ -478,13 +478,11 @@ static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
 
 // CREATE
 t_motivo ejecutar_create(char* file_tag, int qid){
-    char* nombreArch = strdup(file_tag);
-    char* nombreTag = strchr(nombreArch, ':');
+    
+    char* file_origen;
+    char* tag_origen;
+    deserializar_fileTag(strdup(file_tag), file_origen, tag_origen);
 
-    if(nombreTag != NULL) {
-        *nombreTag = '\0'; // Separa el nombre del archivo del tag
-        nombreTag++;       // Avanza al inicio del tag
-    }
     t_paquete* paquete = crear_paquete(CREATE_FILE);
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
@@ -505,6 +503,10 @@ t_motivo ejecutar_create(char* file_tag, int qid){
 t_motivo ejecutar_truncate(char* tag, int nuevo_tam, int qid) {
     log_info(loggerWorker, "TRUNCATE solicitado en tag: %s, nuevo tamaño: %d", tag, nuevo_tam); // LOG NO OBLIGATORIO
     
+    char* file_origen;
+    char* tag_origen;
+    deserializar_fileTag(strdup(tag), file_origen, tag_origen);
+
     //logica multiplo
     if(nuevo_tam % tamanio_bloque_storage != 0) {
         log_info(loggerWorker, "Error: El nuevo tamaño %d NO es múltiplo del tamaño de bloque %d. TRUNCATE abortado.", nuevo_tam, tamanio_bloque_storage);
@@ -550,6 +552,10 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
     int pagina_logica = direccion_base / tamanio_bloque_storage;
     int offset = direccion_base % tamanio_bloque_storage;
     int tamanio_contenido = strlen(contenido);
+    
+    /*char* file_origen;
+    char* tag_origen;
+    deserializar_fileTag(strdup(file_tag), file_origen, tag_origen);*/
 
     t_tabla_paginas* tabla = obtener_o_crear_tabla_paginas(tag);
 
@@ -601,6 +607,10 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     
     log_info(loggerWorker, "Query %d: Page Fault en %s página %d", qid, file_tag, pagina_logica);
     //posible semafoso lock
+    char* file_origen;
+    char* tag_origen;
+    deserializar_fileTag(strdup(file_tag), file_origen, tag_origen);
+    
     int indice_marco_victima = seleccionar_victima(qid);
 
     t_marco* marco_victima = &memoria.marcos[indice_marco_victima];  
@@ -670,6 +680,10 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
     int pagina_inicial = direccion_base / memoria.tamanio_marco;
     int offset_inicial = direccion_base % memoria.tamanio_marco;
     int bytes_restantes = tam;
+    
+    char* file_origen;
+    char* tag_origen;
+    deserializar_fileTag(strdup(file_tag), file_origen, tag_origen);
 
     char* buffer_lectura = malloc(tam); // Buffer para almacenar los datos leídos
     int pos_buffer = 0;                 // Posición actual en el buffer de lectura
@@ -746,8 +760,13 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
         contenido[tamContenido] = '\0';
         free(buffer);
         //se leyo el contenido
-        crear_paquete(MASTER_TO_QC_READ_RESULT);
-        agregar_a_paquete_string()
+        t_paquete *paquete = crear_paquete(MASTER_TO_QC_READ_RESULT);
+        agregar_a_paquete_string(file_origen, paquete, strlen(file_origen));
+        agregar_a_paquete_string(tag_origen, paquete, strlen(tag_origen));
+        agregar_a_paquete_string(contenido, paquete, strlen(contenido));
+        enviar_paquete(paquete, socket_master);
+        eliminar_paquete(paquete);
+        free(contenido);
     } else{
         manejar_errores(motivo, qid);
     }
@@ -764,10 +783,10 @@ t_motivo ejecutar_tag(char* origen, char* destino, int qid) {
         log_error(loggerWorker, "Query %d: Parámetros inválidos en TAG.", qid);
         return ERROR_FILE_INEXISTENTE;
     }
-
     // Separo el origen
-    char* file_origen = strdup(origen);
-    char* tag_origen = strchr(file_origen, ':');
+    char* file_origen;
+    char* tag_origen;
+    deserializar_fileTag(strdup(origen), file_origen, tag_origen);
     
     if(!tag_origen){
         log_info(loggerWorker, "Query %d: Formato inválido en origen: %s", qid, origen);
@@ -817,12 +836,11 @@ t_motivo ejecutar_tag(char* origen, char* destino, int qid) {
 
 // COMMIT
 t_motivo ejecutar_commit(char* file_tag, int qid){
-    char* nombreArch = strdup(file_tag);
-    char* nombreTag = strchr(nombreArch, ':');
-    if(nombreTag != NULL) {
-            *nombreTag = '\0'; // Separa el nombre del archivo del tag
-            nombreTag++;       // Avanza al inicio del tag
-        }
+    
+    char* nombreArch;
+    char* nombreTag;
+    deserializar_fileTag(strdup(file_tag), nombreArch, nombreTag);
+
     // --- 1. Ejecutar FLUSH implícito (Obligatorio) ---
     t_motivo motivo = ejecutar_flush(file_tag, qid);
     manejar_errores(motivo, qid);
@@ -893,8 +911,11 @@ bool ejecutar_flush(char* file_tag, int qid){
 t_motivo ejecutar_delete(char* file_tag, int qid){
     
     // Parseo del file y tag
-    char* file = strdup(file_tag);
-    char* tag = strchr(file, ':'); // nos devuelve puntero al ':'
+    char* file;
+    char* tag;
+    deserializar_fileTag(strdup(file_tag), file, tag);
+
+    //char* tag = strchr(file, ':'); // nos devuelve puntero al ':'
 
     *tag = '\0'; // Separa el nombre del archivo del tag
     tag++;
@@ -917,7 +938,14 @@ t_motivo ejecutar_delete(char* file_tag, int qid){
 // No hace falta implementar nada, el manejo del END se hace en el query interpreter.
 
 // Para cada referencia lectura o escritura del Query Interpreter a una página de la Memoria Interna, se 
-// deberá esperar un tiempo definido por archivo de configuración (RETARDO_MEMORIA). 
+// deberá esperar un tiempo definido por archivo de configuración (RETARDO_MEMORIA).
+
+void deserializar_fileTag(char* fileTag, char *file, char *tag){
+    file = strtok(file_tag_completo, ":");                // obtengo el nombre del archivo
+    tag = strtok(NULL, ":");                              // obtengo el tag
+    free(fileTag);
+}
+
 
 void manejar_errores(t_motivo motivo, int qid) {
     switch(motivo) {
@@ -1072,7 +1100,7 @@ void inicializar_memoria_interna() {
     inicializar_tablas_paginas();
 
     log_info(loggerWorker, "Memoria interna inicializada: %d marcos de %d bytes (total %d bytes) - algoritmo = %s",
-             memoria.cant_marcos, memoria.tamanio_marco, memoria.tamanio_total, memoria.algoritmo);
+            memoria.cant_marcos, memoria.tamanio_marco, memoria.tamanio_total, memoria.algoritmo);
 }
 
 // Para liberar la memoria interna
@@ -1164,20 +1192,14 @@ int seleccionar_bloque_victima() {
 bool solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino) {
     
     log_info(loggerWorker, "Query %d: Solicitando bloque a Storage - File: %s, Bloque: %d", qid, file_tag, pagina_logica);
+    char* nombreArch;
+    char* nombreTag;
+    deserializar_fileTag(strdup(file_tag), nombreArch, nombreTag);
 
     t_paquete* paquete = crear_paquete(READ); 
-    
     agregar_a_paquete(paquete, &qid, sizeof(int));
-    char* nombreArch = strdup(file_tag);
-    char* nombreTag = strchr(nombreArch, ':');
-
-    if(nombreTag != NULL) {
-        *nombreTag = '\0'; // Separa el nombre del archivo del tag
-        nombreTag++;       // Avanza al inicio del tag
-    }
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
     agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag));
-    
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
     

@@ -27,6 +27,6 @@ void iniciar_conexion_master(char* path_query, int prioridad);
 void escuchar_master(int socket_master);
 void recibir_mensaje_read(int socket_master);
 void recibir_mensaje_exit(int socket_master);
-
+const char* obtener_motivo_string(t_motivo motivo);
 
 #endif
