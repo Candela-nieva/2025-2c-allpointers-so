@@ -178,7 +178,7 @@ void* atender_worker(void* arg){
     }
     // Nunca llega acá
     close(worker->socket);
-    return;
+    return NULL;
 }
 
 //========== CASOS DE ATENCION ==========
@@ -240,6 +240,7 @@ void atenderTag(int fd_conexion, void* buffer){
     free(buffer);
     //enviar_operacion(fd_conexion, resultado); 
     t_motivo resultado = op_tag(nombreArch, nombreTag, nombreNuevoTag,nombreNuevoTag,QID);
+    enviar_operacion(fd_conexion,resultado);
     if(nombreArch)
         free(nombreArch);
     if(nombreTag)
@@ -502,6 +503,7 @@ void crear_physical_blocks() {
     for(int i=0; i < cantBloq; i++){
         sprintf(nroBloque,"%0*d", anchoEntrada, i);
         sprintf(nombreArch, "%s/block%s.dat", path_blocks, nroBloque);
+        
         FILE *archBloque = fopen(nombreArch, "w+");
         if (!archBloque) {
             log_error(loggerStorage, "Error al crear '%s': %s", nombreArch, strerror(errno));
@@ -672,14 +674,20 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
             }
             tag->logBlocks++;
             //list_add(tag->physicalBlocks, (void*)0); //decimos que tiene asociado el bloque 0
-            list_add(tag->physicalBlocks, 0);
+
+            int *bloqInicial = malloc(sizeof(int));
+            *bloqInicial = 0;
+            list_add(tag->physicalBlocks, bloqInicial);
+
             log_info(loggerStorage, "##%d - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico 0", query_id, nombreArch, nombreTag, i);
         }
         free(path_block0);
     } else if (bloques_nuevos < bloques_actuales) {
         for (int i = bloques_actuales - 1; i >= bloques_nuevos; i--) {
-            int *pbloqfis = (int)list_get(meta->blocks, i);
+
+            int *pbloqfis = (int*)list_get(meta->blocks, i);
             int bloque_fisico = *pbloqfis;
+
             achicarArchivo(meta, tag->pathTag, ancho, i, bloque_fisico);
             tag->logBlocks--;
             log_info(loggerStorage, "##%d - %s:%s Se eliminó el hard link del bloque lógico %06d al bloque físico %d", query_id, nombreArch, nombreTag, i, bloque_fisico);
@@ -769,14 +777,17 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
             }
             char *hash = crypto_md5 (contenido, tam_bloq);
             free(contenido);
-            int bloqActual = (int)list_get(tag->physicalBlocks,i);
+
+            int *pbloqfis = (int*)list_get(tag->physicalBlocks, i);            
+            int bloqActual = *pbloqfis;
+            
             pthread_mutex_lock(&mutex_hash_index);
             if(config_has_property(configHash, hash)){
                 // CASO DE DUPLICADO ENCONTRADO
                 char *bloqFis = config_get_string_value(configHash, hash);
-                int nroFis;
-                nroFis = atoi(bloqFis + 5); //bloqFis siempre sera del mismo formato "blockNRO" por lo que a partir del 6to caracter esta el nro Fisico
-                if(bloqActual != nroFis){
+                int *nroFis = malloc(sizeof(int));
+                *nroFis = atoi(bloqFis + 5); //bloqFis siempre sera del mismo formato "blockNRO" por lo que a partir del 6to caracter esta el nro Fisico
+                if(bloqActual != *nroFis){
                     // Comenté esto porque estaban mal varias cosas:
                     // 1. Marcabamos libre en bitmap sin verificar si habia otro hardlink apuntandolo
                     // 2. list add index desplaza una posicion el bloque actual (+1). Habia que usar replace, que no desplaza, solo reeemplaza
@@ -792,17 +803,17 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
                     //link(bloqLog,nuevoBloq);
 
                     //Reemplaza el número de bloque en la lista
-                    list_replace(tag->physicalBlocks, i, (void*)nroFis);
+                    list_replace(tag->physicalBlocks, i, nroFis);
 
                     // Reasignar hardlink
-                    char*nuevoBloqPath = obtener_path_bloque_fisico(nroFis);
+                    char*nuevoBloqPath = obtener_path_bloque_fisico(*nroFis);
                     // Desvincular hardlink al bloque fisico anterior
                     unlink(bloqLogPath);
                     if(link(nuevoBloqPath, bloqLogPath) == -1) {
                         log_info(loggerStorage, "Fallo al crear link canónico: %s", strerror(errno));
                         return ERROR_LINK_FALLIDO;
                     }
-                    log_info(loggerStorage, "##%d - %s : %s Bloque Lógico %06d se reasigna de %d a %d", query_id, nombreArch, nombreTag, i, bloqActual, nroFis);
+                    log_info(loggerStorage, "##%d - %s : %s Bloque Lógico %06d se reasigna de %d a %d", query_id, nombreArch, nombreTag, i, bloqActual, *nroFis);
                     liberar_bloque_si_no_referenciado(bloqActual, query_id);
                     free(nuevoBloqPath);
                 }
@@ -912,8 +923,13 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
         //int offset = direccBase % tam_bloq;
         log_info(loggerStorage, "## BLOQ LOGICO A ESCRIBIR %d", nroBloque);
         pthread_mutex_lock(&tag->mutexTag);
-        int bloqFis = list_get(tag->physicalBlocks, nroBloque); //MANEJAR CASTEO
+        //int bloqFis = list_get(tag->physicalBlocks, nroBloque); //MANEJAR CASTEO
+        int *bloqActual = (int*)list_get(tag->physicalBlocks, nroBloque);            
+        int bloqFis = *bloqActual;
         pthread_mutex_unlock(&tag->mutexTag);
+
+        
+
         log_info(loggerStorage, "## LE CORRESPONDE EL BLOQFIS %d", nroBloque);
         char *pathBloqFis = obtener_path_bloque_fisico(bloqFis);
         char *pathBloqLog = obtener_path_bloq_logico(tag, nroBloque);
@@ -937,13 +953,14 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 unlink(pathBloqLog);
                     //marcar_libre_en_bitmap(bloqFis);
                     //repensar esto
-                int nuevoBloqFis = buscar_bloque_libre(query_id);
+                int *nuevoBloqFis = malloc(sizeof(int));
+                *nuevoBloqFis = buscar_bloque_libre(query_id);
                     //list_remove(tag->physicalBlocks, bloqLog);
                 list_replace(tag->physicalBlocks, nroBloque, nuevoBloqFis);
             
-                char *pathBloqFis = obtener_path_bloque_fisico(nuevoBloqFis);
+                char *pathBloqFis = obtener_path_bloque_fisico(*nuevoBloqFis);
                 link(pathBloqLog, pathBloqFis);
-                log_info(loggerStorage, "##%d - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", query_id, nombreArch, nombreTag, nroBloque, nuevoBloqFis);
+                log_info(loggerStorage, "##%d - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", query_id, nombreArch, nombreTag, nroBloque, *nuevoBloqFis);
                 usleep(retardo_acceso_bloque);
                 FILE *bloqL = fopen(pathBloqFis, "r+");
                 if(!bloqL){
@@ -955,7 +972,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 fclose(bloqL);
                 free(pathBloqLog);
                 free(pathBloqFis);
-                return RESULTADO_OK;
+                //return RESULTADO_OK;
                 //faltan frees y falta mejor implementacion de bloques logicos
             }
             
@@ -964,6 +981,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
             return ERROR_ESCRITURA_NO_PERMITIDA; 
         }
     }
+    return RESULTADO_OK; //tendria que ir aca el return
 }
 
 t_motivo op_read_block(char* nombreArch, char *nombreTag, int nroBloque, char **contenido, int query_id){
@@ -992,7 +1010,9 @@ t_motivo op_delete_tag(char* nombreArch, char *nombreTag, int query_id){
         return ERROR_TAG_INEXISTENTE;
     }
     for(int i = 0; i < tag->logBlocks; i++){
-        int bloqFis = list_get(tag->physicalBlocks,i);
+        int *bloqActual = (int*)list_get(tag->physicalBlocks, i);            
+        int bloqFis = *bloqActual;
+        //int bloqFis = list_get(tag->physicalBlocks,i);
         liberar_bloque_si_no_referenciado(bloqFis, query_id);
     }
     log_info(loggerStorage, "Path a borrar : %s",tag->pathTag);
@@ -1190,7 +1210,11 @@ void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag) {
 
     int n = list_size(meta->blocks);
     for (int i = 0; i < n; i++) {
-        int v = list_get(meta->blocks, i);
+
+        int *bloqActual = (int*)list_get(meta->blocks, i);            
+        int v = *bloqActual;
+
+        //int v = list_get(meta->blocks, i);
         sprintf(tmp, "%d", v);
         strcat(buf, tmp);
         if (i < n - 1) strcat(buf, ",");
