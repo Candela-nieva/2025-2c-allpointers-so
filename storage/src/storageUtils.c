@@ -659,6 +659,7 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
     }
     if (tag->estado == COMMITED) {
         log_info(loggerStorage, "File:Tag %s:%s ya está COMMITED. No hay cambios", nombreArch, nombreTag);
+        destruir_metadata(meta);
         return ERROR_ESCRITURA_NO_PERMITIDA; 
     }
     int ancho = calcularAncho();
@@ -803,8 +804,8 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
                     //link(bloqLog,nuevoBloq);
 
                     //Reemplaza el número de bloque en la lista
-                    list_replace(tag->physicalBlocks, i, nroFis);
-
+                    //list_replace(tag->physicalBlocks, i, nroFis);
+                    *pbloqfis = *nroFis;
                     // Reasignar hardlink
                     char*nuevoBloqPath = obtener_path_bloque_fisico(*nroFis);
                     // Desvincular hardlink al bloque fisico anterior
@@ -947,6 +948,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 //fseek(bloqL, offset, SEEK_SET);
                 fwrite(contenido, 1, strlen(contenido), bloqL);
                 fclose(bloqL);
+                free(pathBloqFis);
                 free(pathBloqLog);
                 return RESULTADO_OK;
             }else{
@@ -1029,7 +1031,8 @@ t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
     t_fcb *fcb = malloc(sizeof(t_fcb));
     fcb->nombreArch = nombreNuevoArch;
     fcb->tags = dictionary_create();
-    crear_tag(nombreNuevoTag,nombreNuevoArch, fcb->tags);
+    t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreNuevoArch, fcb->tags);
+    nuevoTag->physicalBlocks = list_create();
     dictionary_put(diccionario_archivos,fcb->nombreArch,fcb);
     return fcb;
 }
@@ -1042,7 +1045,7 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
     log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag);
     tag->nombreTag = nombreNuevoTag;
     tag->tamanio = 0;
-    tag->physicalBlocks = list_create();
+    //tag->physicalBlocks = list_create();
     tag->logBlocks = 0;
     tag->estado = WORK_IN_PROGRESS;
     pthread_mutex_init(&tag->mutexTag, NULL);
@@ -1092,6 +1095,7 @@ void eliminarStructTag(char* nombreArch, char *nombreTag){
 void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     t_fcb *arch = dictionary_get(diccionario_archivos,nombreArch);
     t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreArch,arch->tags);
+    //list_destroy(nuevoTag->physicalBlocks);
     //REVISAR ESTRUCTURAS ADMINISTRATIVAS PARA TAG Y METADATA
     nuevoTag->tamanio = tagOrigen->tamanio;
     nuevoTag->estado = WORK_IN_PROGRESS;
@@ -1102,6 +1106,7 @@ void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     meta->estado = strdup("WORK_IN_PROGRESS");
     guardar_metadata(meta, nombreArch, nombreNuevoTag);
     destruir_metadata(meta);
+
 }
 
 //==========METADATA==========
@@ -1127,13 +1132,21 @@ void crear_metadata (char* path, char* nuevoPath) {
 void destruir_metadata(t_metadata* meta) {
     if (!meta)
         return;
-    if (meta->estado)
+    if (meta->estado){
         free(meta->estado);
+        log_info(loggerStorage, "ACA PASO");
+    }
     if (meta->blocks) {
         //void liberar_int(void* x) { free(x); }
+        log_info(loggerStorage, "ACA se rompe");
         list_destroy_and_destroy_elements(meta->blocks, free);
-        //list_destroy (meta->blocks);
+        /*for (int i = 0; i < list_size(meta->blocks); i++) {
+            free(meta->blocks->head);
+        }
+        list_destroy(meta->blocks);*/
+        log_info(loggerStorage, "ACA PASO");
     }
+    log_info(loggerStorage, "ACA puede romper");
     free(meta);
 }
 
@@ -1172,7 +1185,9 @@ t_metadata* leer_metadata(char* archivo, char* nombreTag) {
         int* block = malloc(sizeof(int));
         *block = atoi(array_blocks[i]);
         list_add(meta->blocks, block);
+        free(array_blocks[i]);
     }
+    free(array_blocks);
     /*for (int i = 0; array_blocks[i] != NULL; i++) {
         //int* block = malloc(sizeof(int));
         int block = atoi(array_blocks[i]);
@@ -1218,6 +1233,7 @@ void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag) {
         sprintf(tmp, "%d", v);
         strcat(buf, tmp);
         if (i < n - 1) strcat(buf, ",");
+        
     }
     strcat(buf, "]");
     config_set_value(config, "BLOCKS", buf);
