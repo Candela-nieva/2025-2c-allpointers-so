@@ -112,7 +112,7 @@ t_motivo ejecutar_create(char* file_tag, int qid);
 t_motivo ejecutar_truncate(char* file_tag, int qid, int nuevo_tam);
 t_motivo ejecutar_write(char* file_tag, int direccionBase, char* contenido, int qid);
 t_motivo ejecutar_read(char* file_tag, int direccionBase, int tamanio, int qid);
-//void ejecutar_delete(char*  file_tag, int qid);
+t_motivo ejecutar_delete(char* file_tag, int qid);
 t_motivo ejecutar_commit(char* file_tag, int qid);
 t_motivo ejecutar_tag(char* origen, char* destino, int qid);
 t_motivo ejecutar_flush(char* file_tag, int qid);
@@ -126,7 +126,7 @@ int reemplazo_lru();
 
 void notificar_fin_query_a_master(int qid, int motivo_op_code);
 
-t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque);
+t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque, void* contenido);
 bool solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
 
