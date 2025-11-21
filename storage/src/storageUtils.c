@@ -141,7 +141,7 @@ void* atender_worker(void* arg){
         void* buffer = recibir_buffer(worker->socket);
         if(buffer == NULL)
             continue;
-        //agregue esto porque me parecio copado jeje
+    
         switch(inst){
             case CREATE_FILE:
                 log_info(loggerStorage,"Operacion Recibida - CREATE : %d",inst);

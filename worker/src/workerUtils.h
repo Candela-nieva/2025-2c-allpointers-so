@@ -12,6 +12,7 @@
 #include <commons/collections/dictionary.h>
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <limits.h> // para LONG_MAX
 
 typedef struct {
     char* modulo;
@@ -108,15 +109,15 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
 void inicializar_memoria_interna();
 //============= EJECUTAR INSTRUCCIONES ==============
 t_motivo ejecutar_create(char* file_tag, int qid);
-t_motivo ejecutar_truncate(char*  file_tag, int qid, int nuevo_tam);
-t_motivo ejecutar_write(char*  file_tag, int direccionBase, char* contenido, int qid);
-t_motivo ejecutar_read(char*  file_tag, int direccionBase, int tamanio, int qid);
+t_motivo ejecutar_truncate(char* file_tag, int qid, int nuevo_tam);
+t_motivo ejecutar_write(char* file_tag, int direccionBase, char* contenido, int qid);
+t_motivo ejecutar_read(char* file_tag, int direccionBase, int tamanio, int qid);
 //void ejecutar_delete(char*  file_tag, int qid);
 t_motivo ejecutar_commit(char* file_tag, int qid);
 t_motivo ejecutar_tag(char* origen, char* destino, int qid);
 t_motivo ejecutar_flush(char* file_tag, int qid);
 void manejar_errores(t_motivo motivo, int qid);
-void deserializar_fileTag(char* fileTag, char *file, char *tag);
+void deserializar_fileTag(char* fileTag, char **file, char **tag);
 
 int seleccionar_victima(int quid);
 int seleccionar_bloque_victima();
@@ -125,7 +126,7 @@ int reemplazo_lru();
 
 void notificar_fin_query_a_master(int qid, int motivo_op_code);
 
-bool enviar_bloque_a_storage(int qid, t_marco* bloque);
+t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque);
 bool solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
 
