@@ -142,6 +142,6 @@ void eliminar_bloq_log (char* pathTag, int nro);
 void crear_copia_tag(char* nombreArch, t_tag *tagOrigen, char *nombreNuevoTag);
 bool tagRepetido(char *nombreArch, char *nombreTag);
 bool archRepetido(char *nombreArch);
-
+void eliminarStructTag(char* nombreArch, char *nombreTag);
 
 #endif

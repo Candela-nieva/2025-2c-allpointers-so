@@ -27,6 +27,7 @@ t_config* configHash = NULL;
 pthread_mutex_t mutex_hash_index;
 pthread_mutex_t mutex_bitmap;
 //==========INICIALIZACION==========
+//prueba
 
 void inicializar_config(void){
     config_struct = malloc(sizeof(t_config_storage)); //Reserva memoria
@@ -241,6 +242,10 @@ void atenderTag(int fd_conexion, void* buffer){
     //enviar_operacion(fd_conexion, resultado); 
     t_motivo resultado = op_tag(nombreArch, nombreTag, nombreNuevoTag,nombreNuevoTag,QID);
     enviar_operacion(fd_conexion,resultado);
+    if(archDestino)
+        free(archDestino);
+    if(nombreNuevoTag)
+        free(nombreNuevoTag);
     if(nombreArch)
         free(nombreArch);
     if(nombreTag)
@@ -700,7 +705,7 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
     //guardar_metadata(meta, nombreArch, nombreTag);
     //esto se tiene que hacer recien en commit ??????????????????????
     log_info(loggerStorage, "##%d - File Truncado %s:%s - Tamaño: %d", query_id, nombreArch, nombreTag, nuevoTamanio);
-    destruir_metadata(meta);
+    //destruir_metadata(meta);
     return RESULTADO_OK;
 }
 
@@ -804,8 +809,8 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
                     //link(bloqLog,nuevoBloq);
 
                     //Reemplaza el número de bloque en la lista
-                    //list_replace(tag->physicalBlocks, i, nroFis);
-                    *pbloqfis = *nroFis;
+                    list_replace(tag->physicalBlocks, i, nroFis);
+                    free(pbloqfis);
                     // Reasignar hardlink
                     char*nuevoBloqPath = obtener_path_bloque_fisico(*nroFis);
                     // Desvincular hardlink al bloque fisico anterior
@@ -845,9 +850,20 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
         tag->estado = COMMITED;
         
         t_metadata *meta = leer_metadata(nombreArch, nombreTag);
+
         meta->tamanio = tag->tamanio;
+        free(meta->estado);
         meta->estado = strdup("COMMITED");
-        meta->blocks = list_duplicate(tag->physicalBlocks);
+        //meta->blocks = list_duplicate(tag->physicalBlocks);
+        list_destroy_and_destroy_elements(meta->blocks, free);
+        meta->blocks = list_create();
+        for(int i = 0; i < list_size(tag->physicalBlocks); i++) {
+            int* original = list_get(tag->physicalBlocks, i);
+            int* copia = malloc(sizeof(int));
+            *copia = *original;
+            list_add(meta->blocks, copia);
+        }
+
         guardar_metadata(meta, nombreArch, nombreTag);
         destruir_metadata(meta); //elimina memory leak?
         log_info(loggerStorage, "##%d - Commit de File:Tag %s:%s", query_id, nombreArch, nombreTag);
@@ -1022,6 +1038,7 @@ t_motivo op_delete_tag(char* nombreArch, char *nombreTag, int query_id){
     sprintf(cmd,"rm -rf %s",tag->pathTag);
     log_info(loggerStorage, "comando : %s",cmd);
     system(cmd);
+    eliminarStructTag(nombreArch, nombreTag);
     return RESULTADO_OK;
 }
 
@@ -1043,7 +1060,7 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
     sprintf(pathNuevoTag, "%s/%s/%s", path_files, nombreArch, nombreNuevoTag);
     tag->pathTag = pathNuevoTag;
     log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag);
-    tag->nombreTag = nombreNuevoTag;
+    tag->nombreTag = strdup(nombreNuevoTag);
     tag->tamanio = 0;
     //tag->physicalBlocks = list_create();
     tag->logBlocks = 0;
@@ -1100,7 +1117,16 @@ void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     nuevoTag->tamanio = tagOrigen->tamanio;
     nuevoTag->estado = WORK_IN_PROGRESS;
     nuevoTag->logBlocks = tagOrigen->logBlocks;
-    nuevoTag->physicalBlocks = list_duplicate (tagOrigen->physicalBlocks);
+
+    //nuevoTag->physicalBlocks = list_duplicate (tagOrigen->physicalBlocks);
+    nuevoTag->physicalBlocks = list_create();
+    for(int i = 0; i < list_size(tagOrigen->physicalBlocks); i++) {
+        int* original = (int*)list_get(tagOrigen->physicalBlocks, i);
+        int* copia = malloc(sizeof(int));
+        *copia = *original;
+        list_add(nuevoTag->physicalBlocks, copia);
+    }
+
     t_metadata *meta = leer_metadata(nombreArch, nombreNuevoTag);
     meta->blocks = nuevoTag->physicalBlocks;
     meta->estado = strdup("WORK_IN_PROGRESS");
@@ -1146,7 +1172,6 @@ void destruir_metadata(t_metadata* meta) {
         list_destroy(meta->blocks);*/
         log_info(loggerStorage, "ACA PASO");
     }
-    log_info(loggerStorage, "ACA puede romper");
     free(meta);
 }
 
@@ -1175,7 +1200,7 @@ t_metadata* leer_metadata(char* archivo, char* nombreTag) {
     meta->tamanio = config_get_int_value(config, "TAMAÑO");
 
     // 5. Leer el estado
-    meta->estado = strdup(config_get_string_value(config, "ESTADO"));
+    meta->estado = strdup (config_get_string_value(config, "ESTADO"));
 
     // 6. Leer el array de bloques
     char** array_blocks = config_get_array_value(config, "BLOCKS");
