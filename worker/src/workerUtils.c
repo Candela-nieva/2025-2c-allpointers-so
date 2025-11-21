@@ -331,7 +331,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
 
 // Limpia las líneas leídas de archivos para que no tengan saltos de línea al final, 
 // y así procesarlas correctamente en el query interpreter.
-static void trim_newline(char* s) {
+void trim_newline(char* s) {
     if(!s) return;
     size_t len = strlen(s);
     while(len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) {
@@ -354,7 +354,8 @@ tipo_instruccion obtener_instruccion(const char* op) {
 }
 
 //Devuelve 'true' si la instrucción fue END, 'false' en cualquier otro caso.
-static bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
+// 
+bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     if(!instruccion) return false;
     
     char* copia = strdup(instruccion);
@@ -513,7 +514,7 @@ bool ya_esta_en_lista(t_list* lista, char* file_tag) {
     return false;       // la funcion manejar_e
 }
 
-// WRITE char* nombreArch, char* nombreTag,
+// WRITE
 t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
 
     usleep((useconds_t)retardo_memoria * 1000);  // Retardo por escritura en memoria
@@ -531,43 +532,51 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
 
     t_tabla_paginas* tabla = obtener_o_crear_tabla_paginas(tag);
     
+      // PARA ESCRIBIR EN TODAS LAS PÁGINAS NECESARIAS ------
     while (bytes_restantes > 0){
         // 1. Verificar si existe entrada y si está presente
-        t_pagina* pagina = buscar_pagina(tabla, pagina_actual);
-        
-    }
+        t_pagina* pagina = buscar_pagina(tabla, pagina_logica);
 
-    // Si no esta presente --> PAGE FAULT
-    if(!pagina || !pagina->presente) {
-        pagina = manejar_page_fault(tag, pagina_logica, tabla, qid);
-
-        if (!pagina) {
-            log_error(loggerWorker, "Query %d:  ejecutar_write: Falló el Page Fault. Abortando escritura.", qid);
-            return ERROR_PAGE_FAULT; // FRACASO (el manejador ya notificó al Master)
+        // Si no esta presente PAGE FAULT
+        if(!pagina || !pagina->presente) {
+            t_motivo motivo;
+            pagina = manejar_page_fault(tag, pagina_logica, tabla, qid, &motivo);
+            if (!pagina) {
+                log_error(loggerWorker, "Query %d:  ejecutar_write: Falló el Page Fault. Abortando escritura.", qid);
+                return motivo; // FRACASO (el manejador ya notificó al Master)
+            }
         }
+    
+        // 2. Calcular lo que se puede escribir en esta página
+        int espacio_en_pagina = tam_pagina - offset;
+        int a_escribir;
+        if (bytes_restantes < espacio_en_pagina)
+        a_escribir = bytes_restantes;
+        else
+        a_escribir = espacio_en_pagina;
+
+        // direccion fisica
+        int marco = pagina->marco;
+        char* direccion_marco = direccion_fisica_marco(marco);
+        void* direccion_destino = (char*)direccion_marco + offset;
+
+        // 3. Escribir protegido por mutex
+        pthread_mutex_lock(&memoria.mutex);
+        memcpy(direccion_destino, ptr_contenido, a_escribir);
+        pthread_mutex_unlock(&memoria.mutex);
+
+        // 4. Actualizar metadata de la página
+        pagina->modificado = true;
+        pagina->uso = true;
+        pagina->ultima_ref = time(NULL);
+
+        // 5. Avanzar punteros/contadores
+        ptr_contenido += a_escribir;
+        bytes_restantes -= a_escribir;
+        pagina_logica++;
+        offset = 0;  // luego de la primera página, offset siempre 0
+
     }
-
-    // 3) Escribir en el marco fisico correspondiente
-    int marco = pagina->marco;
-    void* direccion_marco = direccion_fisica_marco(marco);
-    void* direccion_destino = (char*)direccion_marco + offset;
-
-    pthread_mutex_lock(&memoria.mutex);
-    
-    // Escrbiendo...... (limitando a lo que entra en el bloque)
-    if(offset + tamanio_contenido > memoria.tamanio_marco)
-        tamanio_contenido = memoria.tamanio_marco - offset;
-
-    memcpy(direccion_destino, contenido, tamanio_contenido);
-
-    // Actualizar metadata de Los bits de estado de la pagina (NO DEL MARCO)
-    
-
-    pagina->modificado = true;
-    pagina->uso = true;
-    pagina->ultima_ref = time(NULL);
-
-    pthread_mutex_unlock(&memoria.mutex);
 
     log_info(loggerWorker, "Query %d: Accion: ESCRIBIR - Direccion Fisica: %d - Valor: %s", 
         qid, direccion_base, contenido); // LOG OBLIGATORIO
@@ -576,7 +585,7 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
 }
 
 // Maneja un page fault para la página lógica dada char* nombreArch, char* nombreTag,
-t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid) {
+t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid, t_motivo *motivo) {
     
     log_info(loggerWorker, "Query %d: Page Fault en %s página %d", qid, file_tag, pagina_logica);
     //posible semafoso lock
@@ -600,9 +609,9 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
                     qid, marco_victima->file_tag, marco_victima->pagina_logica);
                     //unlock de memoria
                 void* contenido_victima = memoria.buffer + (indice_marco_victima * memoria.tamanio_marco);
-                t_motivo respuesta = enviar_bloque_a_storage(marco_victima->file_tag, marco_victima->pagina_logica, contenido_victima);
-                if (respuesta != RESULTADO_OK) {
-                    log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, respuesta);
+                *motivo = enviar_bloque_a_storage(qid, marco_victima, contenido_victima);
+                if (*motivo != RESULTADO_OK) {
+                    log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, *motivo);
                     pthread_mutex_unlock(&mutex_tablas_paginas);
                     return NULL; // Error al guardar la víctima
                 }
@@ -613,9 +622,9 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     }
 
     // Pedimos a storage la nueva bloque
-    bool ok_lectura = solicitar_bloque_a_storage(qid,file_tag, pagina_logica, marco_victima);
-    if (!ok_lectura) {
-        //pthread_mutex_unlock(&memoria.mutex);
+    *motivo = solicitar_bloque_a_storage(qid,file_tag, pagina_logica, marco_victima);
+    if (*motivo != RESULTADO_OK) {
+        log_error(loggerWorker, "Query %d: Falló al traer bloque de Storage. Motivo: %d", qid, *motivo);
         return NULL; // Error al traer el bloque (Storage dijo que no existe)
     }
 
@@ -668,11 +677,12 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
             //marco = solicitar_bloque_a_storage(qid, file_tag, pagina_inicial, marco); // CAMBIIAR ESTO
             log_info(loggerWorker, "Query %d: Page fault en READ: %s - Pagina %d", qid, file_tag, pagina_inicial);
             t_tabla_paginas* tabla_pf = obtener_o_crear_tabla_paginas(file_tag);
-            t_pagina* p = manejar_page_fault(file_tag, pagina_inicial, tabla_pf, qid);
+            t_motivo motivo;
+            t_pagina* p = manejar_page_fault(file_tag, pagina_inicial, tabla_pf, qid, &motivo);
 
             if (!p) {
                 free(buffer_lectura);
-                return ERROR_LECTURA_FALLIDA;
+                return motivo;
             }
             indice_marco = p->marco;
 
@@ -731,13 +741,13 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
         free(buffer);
         //se leyo el contenido
         t_paquete *paquete = crear_paquete(MASTER_TO_QC_READ_RESULT);
-        agregar_a_paquete_string(file_origen, paquete, strlen(file_origen));
-        agregar_a_paquete_string(tag_origen, paquete, strlen(tag_origen));
-        agregar_a_paquete_string(contenido, paquete, strlen(contenido));
+        agregar_a_paquete_string(paquete,file_origen, strlen(file_origen));
+        agregar_a_paquete_string(paquete, tag_origen, strlen(tag_origen));
+        agregar_a_paquete_string(paquete,contenido, strlen(contenido));
         enviar_paquete(paquete, socket_master);
         eliminar_paquete(paquete);
         free(contenido);
-    } else{
+    } else {
         manejar_errores(motivo, qid);
     }
     log_info(loggerWorker, "Query %d: Accion: LEER - Direccion fisica: %d - Valor: %s",
@@ -833,14 +843,14 @@ t_motivo ejecutar_flush(char* file_tag, int qid){
         int nro_marco = pagina->marco;
         int nro_pagina_logica = pagina->num_pagina; // Para Storage
         pthread_mutex_unlock(&mutex_tablas_paginas);
-
+        t_marco *marcoPag = obtener_marco_de_pagina(file_tag, nro_pagina_logica);
         if (esta_presente && esta_sucia) {
             void* contenido = memoria.buffer + (nro_marco * memoria.tamanio_marco);
 
-            t_motivo resultado = enviar_bloque_a_storage(file_tag, nro_pagina_logica, contenido);
+            t_motivo resultado = enviar_bloque_a_storage(qid, marcoPag, contenido);
 
             if (resultado != RESULTADO_OK) {
-                log_error(loggerWorker, "FLUSH FALLIDO pág %d. Motivo: %d", nro_pagina_logica, resultado);
+                log_error(loggerWorker, "FLUSH FALLIDO pág %d. Motivo: %d", nro_marco, resultado);
                 return resultado; 
             }
 
@@ -886,10 +896,9 @@ t_motivo ejecutar_delete(char* file_tag, int qid){
 // deberá esperar un tiempo definido por archivo de configuración (RETARDO_MEMORIA).
 
 void deserializar_fileTag(char* fileTag, char **file, char **tag){
-    file = strtok(fileTag, ":");   // obtengo el file
-    tag = strtok(NULL, ":");       // obtengo el tag
+    *file = strtok(fileTag, ":");   // obtengo el file
+    *tag = strtok(NULL, ":");       // obtengo el tag
 }
-
 
 void manejar_errores(t_motivo motivo, int qid) {
     switch(motivo) {
@@ -907,7 +916,7 @@ void manejar_errores(t_motivo motivo, int qid) {
         case ERROR_TAG_PREEXISTENTE:
             log_error(loggerWorker, "Query %d: Error - Tag preexistente.", qid);
             break;
-        case ERROR_PAGE_FAULT:    
+        case ERROR_PAGE_FAULT:  
             log_error(loggerWorker, "Query %d: Error - Fallo en Page Fault.", qid);
             break;
         case ERROR_LECTURA_NO_PERMITIDA:
@@ -947,7 +956,6 @@ void manejar_errores(t_motivo motivo, int qid) {
 
 void* iniciar_conexion_storage(void* arg){ 
     (void)arg; // Evitar warning de variable no usada (porque no usamos argumento en este caso)
-
     socket_storage = crear_conexion(config_struct->ip_storage, config_struct->puerto_storage);
     if(socket_storage == -1) {
         log_info(loggerWorker, "Error al crear la conexión con Storage");
@@ -1076,7 +1084,7 @@ void liberar_memoria_interna() {
 
 // Me devuelve la direccion de inicio del marco dentro del buffer global
 void* direccion_fisica_marco(int marco_id) {
-    return memoria.buffer + (marco_id * memoria.tamanio_marco);
+    return (char*)memoria.buffer + (marco_id * memoria.tamanio_marco);
 }
 
 // Si necesito escribir hago -->
@@ -1134,59 +1142,68 @@ int seleccionar_bloque_victima() {
 t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino) {
     
     log_info(loggerWorker, "Query %d: Solicitando bloque a Storage - File: %s, Bloque: %d", qid, file_tag, pagina_logica);
+    char* copia = strdup(file_tag);
     char* nombreArch;
     char* nombreTag;
-    deserializar_fileTag(strdup(file_tag), nombreArch, nombreTag);
+    deserializar_fileTag(copia, &nombreArch, &nombreTag);
 
-    t_paquete* paquete = crear_paquete(READ); 
+    t_paquete* paquete = crear_paquete(READ_BLOCK); 
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
     agregar_a_paquete_string(paquete,nombreTag,strlen(nombreTag));
+    agregar_a_paquete(paquete, &pagina_logica, sizeof(int));
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
-    
+    free(copia);
     //REVISAR EL CODE OP
     // Recibir contenido
     int op = recibir_operacion(socket_storage);
     t_motivo resultado = (t_motivo) op;
     if (resultado != RESULTADO_OK) {
-        //ACÁ HAY QUE MOSTRAR EL QUE NO ES SEGÚN EL ERROR
         log_error(loggerWorker, "Error al recibir bloque solicitado de Storage para %s", file_tag);
         return resultado;
     }
 
     // Worker se bloquea esperando el BUFFER de datos
-    //void* destino_fisico = memoria.buffer + ( destino->)
+    int tamCont;
+    int offset = 0;
+    char *contenido;
     void* buffer = recibir_buffer(socket_storage);
+    memcpy(&tamCont, buffer + offset, sizeof(int));
+    offset += sizeof(int);
+    contenido = malloc(tamCont + 1);
+    memcpy(contenido, buffer + offset, tamCont);
+    contenido[tamCont] = '\0';
+    free(buffer); 
     
     // (Calculamos el índice del marco restando punteros)
     int num_marco = (destino - memoria.marcos);
     // (Calculamos la dirección física real dentro de 'memoria.buffer')
     void* direccion_fisica_destino = (char*)memoria.buffer + (num_marco * memoria.tamanio_marco);
     //memcpy(direccion_fisica_destino, buffer, memoria.tamanio_marco);
-    memcpy(direccion_fisica_destino, buffer, memoria.tamanio_marco);
-    free(buffer);
+    memcpy(direccion_fisica_destino, contenido, memoria.tamanio_marco);
 
     // Actualizamos metadatos físicos del marco (solo file_tag/pagina/ocupado)
-    strcpy(destino->file_tag, file_tag, sizeof(destino->file_tag)-1);
+    strcpy(destino->file_tag, file_tag);
+    //memcpy(destino->file_tag, file_tag, sizeof(destino->file_tag)-1);
     destino->pagina_logica = pagina_logica;
     destino->ocupado = true;
     
-    return true;
+    return resultado;
 }
 
 t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque, void* contenido) {
     log_info(loggerWorker, "Query %d: Escribiendo en Storage (FLUSH) - File: %s, Pagina: %d", 
-            qid, bloque->file_tag, bloque->pagina_logica);
-
-    t_paquete* paquete = crear_paquete(WRITE_BLOCK); 
+            qid, bloque->file_tag, bloque->pagina_logica); 
 
     // --- 1. PARSEO DEL FILE_TAG ---
-    char* file_tag_dup = strdup(bloque->file_tag);
-    char* nombreArch = strtok(file_tag_dup, ":");
-    char* nombreTag = strtok(NULL, ":");
+    char* copia = strdup(bloque->file_tag);
+    char* nombreArch;
+    char* nombreTag;
+    deserializar_fileTag(copia, &nombreArch, &nombreTag);
 
-    // --- 2. Serializar metadata ---
+    // --- PAQUETE ---
+    t_paquete* paquete = crear_paquete(WRITE_BLOCK);
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch)); 
     agregar_a_paquete_string(paquete, nombreTag, strlen(nombreTag));   
@@ -1196,11 +1213,12 @@ t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque, void* contenido) {
     // --- 3. Calcular dirección y serializar datos ---
     int num_marco = (bloque - memoria.marcos);
     void* direccion_datos = memoria.buffer + (num_marco * memoria.tamanio_marco);
+
+
     agregar_a_paquete(paquete, direccion_datos, tamanio_bloque_storage); 
-    
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
-    free(file_tag_dup);
+    free(copia);
 
     // --- 4. Esperar respuesta ---
     int resultado = recibir_operacion(socket_storage);
@@ -1208,6 +1226,7 @@ t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque, void* contenido) {
     t_tabla_paginas* tablas_de_paginas = obtener_o_crear_tabla_paginas(bloque->file_tag);
     t_pagina *pagina = buscar_pagina(tablas_de_paginas, bloque->pagina_logica);
     pagina->modificado = false;
+    
     return motivo;
 }
 

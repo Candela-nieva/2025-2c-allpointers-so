@@ -98,13 +98,13 @@ void esperar_queries();
 void* iniciar_conexion_storage(void* arg);
 void *manejar_ejecutar(void* buffer);
 void* iniciar_conexion_master(void* arg);
-static void trim_newline(char* s);
-static bool ejecutar_instruccion(const char* instruccion, int qid, int pc);
+void trim_newline(char* s);
+bool ejecutar_instruccion(const char* instruccion, int qid, int pc);
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
 tipo_instruccion obtener_instruccion(const char* op);
 
 //t_bloque_memoria* buscar_bloque(char* tag, int bloque_id);
-t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid);
+t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid, t_motivo *motivo);
 
 void inicializar_memoria_interna();
 //============= EJECUTAR INSTRUCCIONES ==============
@@ -127,7 +127,7 @@ int reemplazo_lru();
 void notificar_fin_query_a_master(int qid, int motivo_op_code);
 
 t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque, void* contenido);
-bool solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino);
+t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
 
 void inicializar_tablas_paginas();
@@ -135,4 +135,6 @@ void liberar_tablas_paginas();
 t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag);
 t_pagina* buscar_pagina(t_tabla_paginas* tabla, int num_pagina);
 t_marco* obtener_marco_de_pagina(char* file_tag, int num_pagina);
+int obtener_indice_marco_de_pagina(char* file_tag, int num_pagina);
+
 #endif

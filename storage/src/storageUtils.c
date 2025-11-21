@@ -264,14 +264,14 @@ void atenderCommit(int fd_conexion, void* buffer){
 }
 
 void atenderWrite(int fd_conexion, void* buffer){
-    int QID, base, tamCont;
+    int QID, nroBloqueLogico, tamCont;
     char *nombreArch;
     char *nombreTag;
     char *contenido;
     //void *contenido;
 
     int offset = recibir_QID_nombreArch_nombreTag(buffer,&QID, &nombreArch, &nombreTag);
-    memcpy(&base,buffer + offset, sizeof(int));
+    memcpy(&nroBloqueLogico,buffer + offset, sizeof(int));
     offset += sizeof(int);
     memcpy(&tamCont, buffer + offset, sizeof(int));
     offset += sizeof(int);
@@ -280,7 +280,7 @@ void atenderWrite(int fd_conexion, void* buffer){
     contenido[tamCont] = '\0';
     free(buffer);
 
-    t_motivo resultado = op_write_block(nombreArch, nombreTag, base, contenido, QID);
+    t_motivo resultado = op_write_block(nombreArch, nombreTag, nroBloqueLogico, contenido, QID);
     enviar_operacion(fd_conexion,resultado);
     if(nombreArch)
         free(nombreArch);
