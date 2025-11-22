@@ -248,7 +248,7 @@ void atender_Worker(int fd){
 
 
             default:
-                log_info(loggerMaster, "Operacion desconocida recibida del WORKER ID <%d>", id_worker);
+                log_info(loggerMaster, "Operacion desconocida recibida del WORKER ID <%d> : %d", id_worker, op);
                 return;
         }
     }

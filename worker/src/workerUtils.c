@@ -268,6 +268,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     
     // 1. Bucle para saltar hasta pc_inicial (para reanudar queries)
     // Si pc_inicial = 5, este bucle se ejecuta 5 veces (pc = 0, 1, 2, 3, 4)
+    
     while (pc < pc_inicial) {
         if (fgets(linea, sizeof(linea), file) == NULL) {
             // El PC está fuera de los límites del archivo
@@ -384,7 +385,8 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
     char* copia = strdup(instruccion);
     trim_newline(copia);
 
-    char* op = strtok(copia, " "); // Obtenemos la operación (primera palabra)    
+    char* op = strtok(copia, " "); // Obtenemos la operación (primera palabra)
+    log_info(loggerWorker, "Operacion registrada : %s", op);    
     if(!op) {
         log_info(loggerWorker, "Query %d: - Instrucción vacía en PC=%d", qid, pc);
         free(copia);
@@ -408,6 +410,7 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
     tipo_instruccion inst_tipo = obtener_instruccion(op);
 
     char* file_tag = strtok(NULL, " ");
+    log_info(loggerWorker, "File_Tag a operar : %s", file_tag);
     // Si escribimos, leemos, creamos tag o truncamos, el archivo queda "abierto" o potencialmente modificado
     if (file_tag != NULL && archivos_abiertos != NULL)
         if (inst_tipo == WRITE || inst_tipo == TAG || inst_tipo == READ || inst_tipo == TRUNCATE)
@@ -418,6 +421,7 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
 
     switch (inst_tipo) {
         case CREATE:
+            log_info(loggerWorker, "EJECUCION DE CREATE");
             motivo = ejecutar_create(file_tag, qid);
             break;
         case TRUNCATE:
@@ -491,9 +495,9 @@ t_motivo ejecutar_create(char* file_tag, int qid){
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, file_origen, strlen(file_origen));
     agregar_a_paquete_string(paquete,tag_origen,strlen(tag_origen));
-    int tamanio = 0;
-    agregar_a_paquete(paquete, &tamanio, sizeof(int));
-
+    //int tamanio = 0;
+    //agregar_a_paquete(paquete, &tamanio, sizeof(int));
+    log_info(loggerWorker,"Se envia a Storage el CODOP %d , Qid %d , file : %s , tag : %s", CREATE_FILE, qid, file_origen, tag_origen);
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
     free(copia);

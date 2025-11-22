@@ -7,7 +7,7 @@ int main(int argc, char* argv[]) {
     
     // Ejemplo de parametros hardcodeados para pruebas rapidas
     config_queryCTRL = "query.config";
-    char* path_query = "utils/tests/testInicial";
+    char* path_query = "testInicial";
     int prioridad = 1;
     
     // Parametros de entrada

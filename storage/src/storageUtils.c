@@ -114,7 +114,7 @@ void iniciar_servidor_multihilo(void)
             eliminar_paquete(paquete);
             //close(fd_conexion); // NUEVO: cierro si no voy a atender más
             pthread_t hilo_worker;
-            pthread_create(&hilo_worker, NULL, atender_worker, (void*)nuevoWorker);
+            pthread_create(&hilo_worker, NULL, atender_worker, nuevoWorker);
             pthread_detach(hilo_worker);
         } else {
             log_info(loggerStorage, "Operacion desconocida. Cerrando conexion.");
@@ -129,9 +129,10 @@ void iniciar_servidor_multihilo(void)
 void* atender_worker(void* arg){
     t_worker *worker = (t_worker *)arg;
     //int qid;
-    free(arg);
+    //free(arg);
     while (1)
     {
+        log_info(loggerStorage, "##Se escuchan peticiones de Worker %d", worker->ID_Worker);
         op_storage inst = recibir_operacion(worker->socket);
         if(inst <= 0) {
             cant_workers--;
@@ -173,7 +174,7 @@ void* atender_worker(void* arg){
                 atenderDelete(worker->socket,buffer);
                 break;
             default:
-                log_info(loggerStorage,"Fallo : Operacion Desconocida");
+                log_info(loggerStorage,"Fallo : Operacion Desconocida : %d", inst);
                 break;
         }
     }
