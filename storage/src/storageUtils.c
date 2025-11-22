@@ -531,9 +531,9 @@ void initialFile(){
     op_write_block("initial_file","BASE", 0,escrituraInicial, 0);
     free(escrituraInicial);
     op_commit("initial_file","BASE", 0);
-    op_create("file2","otroTag", 0);
+    /*op_create("file2","otroTag", 0);
     op_truncate("initial_file","BASE", tam_bloq, 0);
-    op_tag("initial_file","BASE","file2","BASE2", 0);
+    op_tag("initial_file","BASE","file2","BASE2", 0);*/
    
 }
 

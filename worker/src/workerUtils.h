@@ -12,6 +12,7 @@
 #include <commons/collections/dictionary.h>
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <semaphore.h>
 #include <limits.h> // para LONG_MAX
 
 typedef struct {
@@ -88,6 +89,7 @@ extern t_config* config;
 extern t_config_worker* config_struct; 
 extern char* config_worker;
 extern t_dictionary* tablas_de_paginas;
+extern sem_t sem_storage_ready;
 
 // =================== MAIN Y BASIC =========================
 void inicializar_config(void);

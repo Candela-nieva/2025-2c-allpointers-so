@@ -7,7 +7,7 @@ int main(int argc, char* argv[]) {
     
     // Ejemplo de parametros hardcodeados para pruebas rapidas
     config_queryCTRL = "query.config";
-    char* path_query = "aaaaa";
+    char* path_query = "utils/tests/testInicial";
     int prioridad = 1;
     
     // Parametros de entrada
@@ -20,10 +20,10 @@ int main(int argc, char* argv[]) {
     cargar_config();
     crear_logger();
     
-    if(argc < 4) {
+    /*if(argc < 4) {
         log_info(loggerQueryCTRL, "Uso: %s <archivo_config> <archivo_query> <prioridad>\n", argv[0]);
         return EXIT_FAILURE;
-    }
+    }*/
 
     if(prioridad < 0){
         log_info(loggerQueryCTRL, "Prioridad invalida: %s\n", argv[3]);

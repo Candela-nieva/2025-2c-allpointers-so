@@ -66,7 +66,7 @@ void escuchar_master(int socket_master) {
 
 void recibir_mensaje_read(int socket_master){
     void *buffer = recibir_buffer(socket_master);
-    char* contenido, nombreArch, nombreTag;
+    char* contenido, *nombreArch, *nombreTag;
     int len_contenido, len_nombreArch, len_nombreTag;
 
     int offset = 0;
@@ -101,14 +101,14 @@ void recibir_mensaje_read(int socket_master){
 }
 
 void recibir_mensaje_exit(int socket_master){
-    int motivo_int = recibir_operacion(socket_master)
+    int motivo_int = recibir_operacion(socket_master);
 
     t_motivo motivo = (t_motivo) motivo_int;
 
-    const char* motivo = obtener_motivo_string(motivo);
+    const char* string_motivo = obtener_motivo_string(motivo);
 
     // Log obligatorio
-    log_info(logger, "## Query Finalizada - %s", motivo);
+    log_info(loggerQueryCTRL, "## Query Finalizada - %s", string_motivo);
 
     // Cerrar la conexión y terminar el Query Control
     close(socket_master);
@@ -116,7 +116,7 @@ void recibir_mensaje_exit(int socket_master){
 
 const char* obtener_motivo_string(t_motivo motivo) {
     switch (motivo) {
-        case RESULTADO_OK:                 return "RESULTADO EXITOSO"
+        case RESULTADO_OK:                 return "RESULTADO EXITOSO";
         case ERROR_FILE_INEXISTENTE:       return "FILE_INEXISTENTE";
         case ERROR_TAG_INEXISTENTE:        return "TAG_INEXISTENTE";
         case ERROR_FILE_PREEXISTENTE:      return "FILE_YA_EXISTE";

@@ -16,7 +16,8 @@ pthread_mutex_t mutex_tablas_paginas;
 
 // Sincronización entre hilos
 pthread_mutex_t mutex_storage_ready= PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t cond_storage_ready = PTHREAD_COND_INITIALIZER;
+//pthread_cond_t cond_storage_ready = PTHREAD_COND_INITIALIZER;
+sem_t cond_storage_ready;
 bool storage_ready = false; 
 
 // ----------------------
@@ -60,6 +61,7 @@ void cargar_config() {
 
     tam_memoria = atoi(config_struct->tam_memoria);
     retardo_memoria = atoi(config_struct->retardo_memoria);
+    sem_init(&cond_storage_ready, 0, 0);
 }
 
 // Función para iniciar el logger
@@ -89,15 +91,11 @@ void* iniciar_conexion_master(void* arg){
     }
 
     int id_worker = *(int*)arg;
-    free(arg); // Liberamos el puntero
     
     // Esperamos a que el storage esté listo antes de proceder
-    pthread_mutex_lock(&mutex_storage_ready);
-    while(!storage_ready) {
-        log_info(loggerWorker, "Esperando a que Storage esté listo antes de conectar con Master...");
-        pthread_cond_wait(&cond_storage_ready, &mutex_storage_ready);
-    }
-    pthread_mutex_unlock(&mutex_storage_ready);
+    log_info(loggerWorker, "Esperando a que Storage esté listo antes de conectar con Master...");
+
+    sem_wait(&cond_storage_ready);
 
     // Ahora podemos proceder con la conexión a Master
     log_info(loggerWorker, "Handshake con Storage completado. Iniciando conexión/handshake con Master...");
@@ -111,8 +109,10 @@ void* iniciar_conexion_master(void* arg){
     t_paquete* paquete = crear_paquete(HANDSHAKE_WORKER);
     agregar_a_paquete(paquete, &id_worker, sizeof(int));
     enviar_paquete(paquete, socket_master);
-    eliminar_paquete(paquete);
     log_info(loggerWorker, "Handshake enviado a Master - Worker ID enviado: %d", id_worker);
+    eliminar_paquete(paquete);
+    free(arg); // Liberamos el puntero
+    
     
     // Despues de enviar el HANDSHAKE a Master, deberiamos recibir un HANDSHAKE_OK, antes de proceder a esperar queries??????
     // OPCIONAL: recibir HANDSHAKE_OK (si Master lo envía)
@@ -151,8 +151,8 @@ void esperar_queries(){
                 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 //pthread_create(&ejecutar, NULL, manejar_ejecutar, buffer);
                 //pthread_detach(ejecutar);
-                manejar_ejecutar(buffer);
                 log_info(loggerWorker, "Se recibio la operacion EJECUTAR");
+                manejar_ejecutar(buffer);
                 break;
             //NUEVO!!!!!
             case DESALOJO: // Debido al algoritmo utilizado en el Master
@@ -197,7 +197,7 @@ void* manejar_ejecutar(void *buffer) {
     //log_info(loggerWorker, "Manejando EJECUTAR: PC=%d, Archivo=%s", pc, archivo);
     //intento implementar cheque de interrupt
     //NUEVO!!!!!
-    while(true){
+    /*while(true){
         log_info(loggerWorker, "EJECUTANDO....EJECUTANDO....");
         usleep(3000000);
         ++pc;
@@ -214,7 +214,7 @@ void* manejar_ejecutar(void *buffer) {
             break;
         }
 
-    }
+    }*/
     
     ejecutar_query(pc, archivo, qid);
     log_info(loggerWorker, "FIN DE QUERY ACTUAL");
@@ -987,15 +987,27 @@ void manejar_errores(t_motivo motivo, int qid) {
 // 1ero) Iniciar conexion a storage
 
 void* iniciar_conexion_storage(void* arg){ 
-    (void)arg; // Evitar warning de variable no usada (porque no usamos argumento en este caso)
+    //(void)arg; // Evitar warning de variable no usada (porque no usamos argumento en este caso)
     socket_storage = crear_conexion(config_struct->ip_storage, config_struct->puerto_storage);
     if(socket_storage == -1) {
         log_info(loggerWorker, "Error al crear la conexión con Storage");
         pthread_exit(NULL); // Terminar el hilo si hay un error
     }
+    if(arg == NULL){
+        log_info(loggerWorker, "Error: El ID del Worker no fue proporcionado correctamente.");
+        pthread_exit(NULL); // Terminar el hilo si no se proporciona un ID válido
+    }
+
+    int id_worker = *(int*)arg;
     
     // Enviar handshake a Storage
-    enviar_operacion(socket_storage, HANDSHAKE_WORKER); // Enviar el handshake a Memoria
+    t_paquete *inicial = crear_paquete(HANDSHAKE_WORKER);
+    agregar_a_paquete(inicial, &id_worker, sizeof(int));
+    enviar_paquete(inicial, socket_storage);
+    log_info(loggerWorker, "Handshake enviado a Storage - Worker ID enviado: %d", id_worker);
+    eliminar_paquete(inicial);
+    //free(arg); // 
+    //enviar_operacion(socket_storage, HANDSHAKE_WORKER); // Enviar el handshake a Memoria
     //recibir tamanio de pags
     int op = recibir_operacion(socket_storage);
     
@@ -1030,14 +1042,8 @@ void* iniciar_conexion_storage(void* arg){
     log_info(loggerWorker, "Tamanio de pagina recibido de Storage: %d", tamanio_bloque_storage);
     log_info(loggerWorker, "Worker listo para interactuar con Storage");
     
-    // Señalamos que el storage ya está listo
-    pthread_mutex_lock(&mutex_storage_ready); 
-    storage_ready = true;
-    pthread_cond_signal(&cond_storage_ready);
-    pthread_mutex_unlock(&mutex_storage_ready);
-
     inicializar_memoria_interna();  // por el momento que este aca!!
-
+    sem_post(&cond_storage_ready);
     return NULL; 
 }
 
