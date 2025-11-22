@@ -630,7 +630,7 @@ void eliminar_bloq_log (char* pathTag, int nro) {
 //==========OPERACIONES==========
 
 t_motivo op_create(char *nombreArch, char *nombreTag, int query_id){
-    usleep(retardo_operacion);
+    usleep(retardo_operacion * 1000);
     if(archRepetido(nombreArch)){
         log_info(loggerStorage, "Fallo : File preexistente %s:%s", nombreArch, nombreTag);
         return ERROR_FILE_PREEXISTENTE;
@@ -649,7 +649,7 @@ t_motivo op_create(char *nombreArch, char *nombreTag, int query_id){
 }
 
 t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id) {
-    usleep(retardo_operacion);
+    usleep(retardo_operacion  * 1000);
     t_metadata* meta = leer_metadata(nombreArch, nombreTag);
     if (!meta) return ERROR_FILE_INEXISTENTE;
     
@@ -705,7 +705,7 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
     //guardar_metadata(meta, nombreArch, nombreTag);
     //esto se tiene que hacer recien en commit ??????????????????????
     log_info(loggerStorage, "##%d - File Truncado %s:%s - Tamaño: %d", query_id, nombreArch, nombreTag, nuevoTamanio);
-    //destruir_metadata(meta);
+    destruir_metadata(meta);
     return RESULTADO_OK;
 }
 
@@ -722,7 +722,7 @@ t_motivo agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_b
 
 
 void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico) {
-
+    
     eliminar_bloq_log(pathTag, nro);
 
     // revisar nlink del físico
@@ -733,7 +733,7 @@ void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bl
     //si ya se hizo unlink antes, la cantidad de links deberia ser 0
     struct stat st;
     if (stat(path_fisico, &st) == 0) {
-        if (st.st_nlink == 0 && bloque_fisico != 0) {
+        if (st.st_nlink <= 1 && bloque_fisico != 0) {
             marcar_libre_en_bitmap(bloque_fisico);
         }
     }
@@ -744,7 +744,7 @@ void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bl
 }
 
 t_motivo op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino,char *nombreNuevoTag, int query_id){
-    usleep(retardo_operacion);
+    usleep(retardo_operacion  * 1000);
     t_fcb* fcbDestino = dictionary_get(diccionario_archivos, nombreArchDestino);
     if(!fcbDestino){
         return ERROR_FILE_INEXISTENTE;
@@ -765,7 +765,7 @@ t_motivo op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino
 }
 
 t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
-    usleep(retardo_operacion);
+    usleep(retardo_operacion  * 1000);
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if(tag){
         pthread_mutex_lock(&tag->mutexTag);
@@ -876,7 +876,7 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
 
 char* leer_contenido_bloque(char* path_bloque_logico) {
     // Reservamos memoria para el contenido del bloque
-    usleep(retardo_acceso_bloque);
+    usleep(retardo_acceso_bloque  * 1000);
     char* contenido = malloc(tam_bloq);
     if (contenido == NULL) {
         log_info(loggerStorage, "Error al reservar memoria para el contenido del bloque.");
@@ -925,7 +925,7 @@ void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id) {
 }
 
 t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *contenido, int query_id){
-    usleep(retardo_operacion);
+    usleep(retardo_operacion  * 1000);
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if (!tag) {
         log_info(loggerStorage, "Tag inexistente %s:%s", nombreArch, nombreTag);
@@ -977,10 +977,13 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 list_replace(tag->physicalBlocks, nroBloque, nuevoBloqFis);
             
                 char *pathBloqFis = obtener_path_bloque_fisico(*nuevoBloqFis);
-                link(pathBloqLog, pathBloqFis);
+                if(link(pathBloqFis, pathBloqLog) == -1) {
+                    log_info(loggerStorage, "Error en el linking");
+                    return ERROR_LINK_FALLIDO;
+                }
                 log_info(loggerStorage, "##%d - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", query_id, nombreArch, nombreTag, nroBloque, *nuevoBloqFis);
-                usleep(retardo_acceso_bloque);
-                FILE *bloqL = fopen(pathBloqFis, "r+");
+                usleep(retardo_acceso_bloque  * 1000);
+                FILE *bloqL = fopen(pathBloqLog, "r+");
                 if(!bloqL){
                     log_info(loggerStorage, "Error al abrir el bloque lógico '%s' : %s", pathBloqFis, strerror(errno));
                     return ERROR_NO_PUDO_ABRIR_ARCHIVO;
@@ -1003,7 +1006,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
 }
 
 t_motivo op_read_block(char* nombreArch, char *nombreTag, int nroBloque, char **contenido, int query_id){
-    usleep(retardo_operacion);
+    usleep(retardo_operacion  * 1000);
     t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
     char *pathBloq = obtener_path_bloq_logico(tag,nroBloque);
     if(nroBloque >= tag->logBlocks || nroBloque < 0){
@@ -1022,7 +1025,7 @@ t_motivo op_read_block(char* nombreArch, char *nombreTag, int nroBloque, char **
 }
 
 t_motivo op_delete_tag(char* nombreArch, char *nombreTag, int query_id){
-    usleep(retardo_operacion);
+    usleep(retardo_operacion * 1000);
     t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
     if(!tag){
         return ERROR_TAG_INEXISTENTE;
@@ -1117,7 +1120,7 @@ void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     nuevoTag->tamanio = tagOrigen->tamanio;
     nuevoTag->estado = WORK_IN_PROGRESS;
     nuevoTag->logBlocks = tagOrigen->logBlocks;
-
+    
     //nuevoTag->physicalBlocks = list_duplicate (tagOrigen->physicalBlocks);
     nuevoTag->physicalBlocks = list_create();
     for(int i = 0; i < list_size(tagOrigen->physicalBlocks); i++) {
@@ -1128,7 +1131,20 @@ void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
     }
 
     t_metadata *meta = leer_metadata(nombreArch, nombreNuevoTag);
-    meta->blocks = nuevoTag->physicalBlocks;
+    if (meta->blocks) list_destroy_and_destroy_elements(meta->blocks, free);
+    meta->blocks = list_create();
+
+    for(int i = 0; i < list_size(nuevoTag->physicalBlocks); i++) {
+        int* original = (int*)list_get(nuevoTag->physicalBlocks, i);
+        int* copia_meta = malloc(sizeof(int)); 
+        *copia_meta = *original;
+        list_add(meta->blocks, copia_meta);
+    }
+    //tuvimos que recurrir a copiar elemento por elemento ya que sino se liberaba los elementos de la lista de tag
+    //meta->blocks = nuevoTag->physicalBlocks;
+    if (meta->estado) {
+        free(meta->estado);
+    }
     meta->estado = strdup("WORK_IN_PROGRESS");
     guardar_metadata(meta, nombreArch, nombreNuevoTag);
     destruir_metadata(meta);
@@ -1160,17 +1176,11 @@ void destruir_metadata(t_metadata* meta) {
         return;
     if (meta->estado){
         free(meta->estado);
-        log_info(loggerStorage, "ACA PASO");
     }
     if (meta->blocks) {
-        //void liberar_int(void* x) { free(x); }
-        log_info(loggerStorage, "ACA se rompe");
         list_destroy_and_destroy_elements(meta->blocks, free);
-        /*for (int i = 0; i < list_size(meta->blocks); i++) {
-            free(meta->blocks->head);
-        }
-        list_destroy(meta->blocks);*/
-        log_info(loggerStorage, "ACA PASO");
+       
+    
     }
     free(meta);
 }
