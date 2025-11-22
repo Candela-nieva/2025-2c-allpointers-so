@@ -99,9 +99,12 @@ void* iniciar_conexion_storage(void* arg);
 void *manejar_ejecutar(void* buffer);
 void* iniciar_conexion_master(void* arg);
 void trim_newline(char* s);
-bool ejecutar_instruccion(const char* instruccion, int qid, int pc);
+bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* archivos_abiertos);
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
 tipo_instruccion obtener_instruccion(const char* op);
+
+bool es_mismo_archivo(void* elemento);
+void registrar_archivo_abierto(t_list* lista, char* file_tag);
 
 //t_bloque_memoria* buscar_bloque(char* tag, int bloque_id);
 t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid, t_motivo *motivo);
@@ -126,7 +129,7 @@ int reemplazo_lru();
 
 void notificar_fin_query_a_master(int qid, int motivo_op_code);
 
-t_motivo enviar_bloque_a_storage(int qid, int nro_pagina_logica, void* contenido);
+t_motivo enviar_bloque_a_storage(int qid, char* file_tag, int nro_pagina_logica, void* contenido);
 t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
 

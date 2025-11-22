@@ -142,14 +142,6 @@ void esperar_queries(){
         }
 
         log_info(loggerWorker, "Codigo de operacion recibido de Master: %d", cod_op);
-
-
-        // ???????
-        /*if(cod_op != EJECUTAR){
-            log_info(loggerWorker, "Error al recibir cod_op de Master, se esperaba EJECUTAR"); // esta entrando aqui cuando lo compilamos, no sé si con lo que tenemos hasta el momento era lo esperado o si esta fallando
-            return;
-        }*/
-        
         switch(cod_op) {
             case EJECUTAR: // Master avisa que hay una nueva query para que este worker ejecute
                 void* buffer = recibir_buffer(socket_master);
@@ -224,7 +216,7 @@ void* manejar_ejecutar(void *buffer) {
 
     }
     
-    //ejecutar_query(pc, archivo, qid); ---> ESTO HAY QUE DESCOMENTARLO LUEGO!!
+    ejecutar_query(pc, archivo, qid);
     log_info(loggerWorker, "FIN DE QUERY ACTUAL");
     free(archivo);
 
@@ -268,6 +260,9 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
         return;
     }
     
+    // Inicializo lista de archivos abiertos en esta Query
+    t_list* archivos_abiertos = list_create();
+
     char linea[2048];
     int pc = 0;
     
@@ -278,6 +273,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
             // El PC está fuera de los límites del archivo
             log_info(loggerWorker, "Query %d: PC %d fuera de rango (EOF).", qid, pc_inicial);
             // revisar porque no tenemos un int notificar_fin_query_a_master(qid, "EOF");
+            list_destroy(archivos_abiertos);
             fclose(file);
             return;
         }
@@ -292,7 +288,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
 
         log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea); // fetch de la linea
         
-        es_end = ejecutar_instruccion(linea, qid, pc);
+        es_end = ejecutar_instruccion(linea, qid, pc, archivos_abiertos);
         
         if (es_end) {
             log_info(loggerWorker, "##Query %d: Query finalizada (END)", qid);
@@ -306,6 +302,13 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
         // Comprobar interrupción (desalojo)
         if (atomic_load(&hay_interrupt) == 1) {
             atomic_store(&hay_interrupt, 0);
+
+            for(int i = 0; i < list_size(archivos_abiertos); i++) {
+                char* file_tag = list_get(archivos_abiertos, i);
+                // ejecutar_flush ya sabe página que hay que guardar en storage
+                ejecutar_flush(file_tag, qid);
+            }
+
             int pc_siguiente = pc + 1;
             
             t_paquete *paquete = crear_paquete(PC_ACTUALIZADO);
@@ -314,6 +317,8 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
             eliminar_paquete(paquete);
             
             log_info(loggerWorker, "## Query %d: Desalojada por pedido del Master. PC guardado: %d", qid, pc_siguiente);
+            
+            list_destroy_and_destroy_elements(archivos_abiertos, free);
             fclose(file);
             return; // Salir de la función (el hilo muere)
         }
@@ -329,6 +334,20 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     }
     
     fclose(file);
+}
+
+void registrar_archivo_abierto(t_list* lista, char* file_tag) {
+    if (!lista || !file_tag) return;
+
+    bool es_mismo_archivo(void* elemento) {
+    return strcmp((char*)elemento, file_tag) == 0;
+    }
+
+    // Si NO está en la lista, lo agregamos duplicando el string (dueños de la memoria)
+    if (!list_any_satisfy(lista, es_mismo_archivo)) {
+        list_add(lista, strdup(file_tag));
+        log_info(loggerWorker, "Archivo %s registrado para control de flush.", file_tag);
+    }
 }
 
 
@@ -359,7 +378,7 @@ tipo_instruccion obtener_instruccion(const char* op) {
 
 //Devuelve 'true' si la instrucción fue END, 'false' en cualquier otro caso.
 // 
-bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
+bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* archivos_abiertos) {
     if(!instruccion) return false;
     
     char* copia = strdup(instruccion);
@@ -389,6 +408,10 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc) {
     tipo_instruccion inst_tipo = obtener_instruccion(op);
 
     char* file_tag = strtok(NULL, " ");
+    // Si escribimos, leemos, creamos tag o truncamos, el archivo queda "abierto" o potencialmente modificado
+    if (file_tag != NULL && archivos_abiertos != NULL)
+        if (inst_tipo == WRITE || inst_tipo == TAG || inst_tipo == READ || inst_tipo == TRUNCATE)
+            registrar_archivo_abierto(archivos_abiertos, file_tag);
 
     // 2. Usamos el enum en el switch e inicializamos motivo para todos los cases
     t_motivo motivo = ERROR_DESCONOCIDO;
@@ -615,7 +638,7 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
                 void* contenido_victima = memoria.buffer + (indice_marco_victima * memoria.tamanio_marco);
                 void* buffer_temporal = malloc(tamanio_bloque_storage);
                 memcpy(buffer_temporal, contenido_victima, tamanio_bloque_storage);
-                *motivo = enviar_bloque_a_storage(qid, marco_victima->pagina_logica, contenido_victima);
+                *motivo = enviar_bloque_a_storage(qid, file_tag, marco_victima->pagina_logica, contenido_victima);
                 if (*motivo != RESULTADO_OK) {
                     log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, *motivo);
                     pthread_mutex_unlock(&mutex_tablas_paginas);
@@ -854,7 +877,7 @@ t_motivo ejecutar_flush(char* file_tag, int qid){
             memcpy(buffer_temporal, contenido, tamanio_bloque_storage);
             pthread_mutex_unlock(&mutex_tablas_paginas);
             
-            t_motivo resultado = enviar_bloque_a_storage(qid, nro_pagina_logica, buffer_temporal);
+            t_motivo resultado = enviar_bloque_a_storage(qid, file_tag, nro_pagina_logica, buffer_temporal);
             free(buffer_temporal);
             if (resultado != RESULTADO_OK) {
                 log_error(loggerWorker, "FLUSH FALLIDO pág %d. Motivo: %d", nro_marco, resultado);
@@ -1201,12 +1224,12 @@ t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, 
     return resultado;
 }
 
-t_motivo enviar_bloque_a_storage(int qid, int nro_pagina_logica, void* contenido) {
-    log_info(loggerWorker, "Query %d: Escribiendo en Storage (FLUSH) - File: %s, Pagina: %d", 
-            qid, bloque->file_tag, bloque->pagina_logica); 
-
+t_motivo enviar_bloque_a_storage(int qid, char* file_tag, int nro_pagina_logica, void* contenido) {
+    log_info(loggerWorker, "Query %d: Enviando a Storage (Write) -> Archivo: %s, Pagina: %d", 
+             qid, file_tag, nro_pagina_logica);
+    
     // --- 1. PARSEO DEL FILE_TAG ---
-    char* copia = strdup(bloque->file_tag);
+    char* copia = strdup(file_tag);
     char* nombreArch;
     char* nombreTag;
     deserializar_fileTag(copia, &nombreArch, &nombreTag);
@@ -1216,7 +1239,7 @@ t_motivo enviar_bloque_a_storage(int qid, int nro_pagina_logica, void* contenido
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch)); 
     agregar_a_paquete_string(paquete, nombreTag, strlen(nombreTag));   
-    agregar_a_paquete(paquete, nro_pagina_logica, sizeof(int));
+    agregar_a_paquete(paquete, &nro_pagina_logica, sizeof(int));
     agregar_a_paquete(paquete, contenido, tamanio_bloque_storage);
     //agregar_a_paquete_string(paquete, contenido, strlen(contenido));
     // --- 3. Calcular dirección y serializar datos ---
@@ -1231,8 +1254,8 @@ t_motivo enviar_bloque_a_storage(int qid, int nro_pagina_logica, void* contenido
     // --- 4. Esperar respuesta ---
     int resultado = recibir_operacion(socket_storage);
     t_motivo motivo = (t_motivo) resultado;
-    t_tabla_paginas* tablas_de_paginas = obtener_o_crear_tabla_paginas(bloque->file_tag);
-    t_pagina *pagina = buscar_pagina(tablas_de_paginas, bloque->pagina_logica);
+    t_tabla_paginas* tablas_de_paginas = obtener_o_crear_tabla_paginas(file_tag);
+    t_pagina *pagina = buscar_pagina(tablas_de_paginas, nro_pagina_logica);
     pagina->modificado = false;
     
     return motivo;
