@@ -41,6 +41,7 @@ void iniciar_conexion_master(char* path_query, int prioridad) {
 void escuchar_master(int socket_master) {
     while(1) {
         //SOCKET 
+        log_info(loggerQueryCTRL, "Escuchando respuestas de master ...");
         op_code operacion = recibir_operacion(socket_master);
         switch(operacion) {
             //MENSAJE DE READ
@@ -49,6 +50,7 @@ void escuchar_master(int socket_master) {
                 break;
             //MENSAJE FIN_QUERY
             case MASTER_TO_QC_END:
+                log_info(loggerQueryCTRL, "Master indico fin de Query");
                 recibir_mensaje_exit(socket_master);
                 close(socket_master);
                 return; // Salimos de la función y terminamos la escucha*/

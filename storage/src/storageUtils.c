@@ -134,7 +134,8 @@ void* atender_worker(void* arg){
     {
         log_info(loggerStorage, "##Se escuchan peticiones de Worker %d", worker->ID_Worker);
         op_storage inst = recibir_operacion(worker->socket);
-        if(inst <= 0) {
+        log_info(loggerStorage, "##Instruccion recibida %d", inst);
+        if(inst < 0) {
             cant_workers--;
             log_info(loggerStorage, "##Se desconecta el Worker %d - Cantidad de Workers: %d", worker->ID_Worker, cant_workers);
             darDeBajaWorker(worker);

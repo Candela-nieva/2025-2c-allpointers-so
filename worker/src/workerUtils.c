@@ -499,12 +499,14 @@ t_motivo ejecutar_create(char* file_tag, int qid){
     //agregar_a_paquete(paquete, &tamanio, sizeof(int));
     log_info(loggerWorker,"Se envia a Storage el CODOP %d , Qid %d , file : %s , tag : %s", CREATE_FILE, qid, file_origen, tag_origen);
     enviar_paquete(paquete, socket_storage);
+    log_info(loggerWorker,"ENVIADO A STORAGE");
     eliminar_paquete(paquete);
     free(copia);
     //log_info(loggerWorker, "Instrucción CREATE enviada a Storage para el tag: %s", file_tag);
     
     int resultado = recibir_operacion(socket_storage);
     t_motivo motivo = (t_motivo) resultado;
+    log_info(loggerWorker,"MOTIVO RECIBIDO DE STORAGE %d", resultado);
     return motivo;
 }
 
