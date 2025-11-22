@@ -154,8 +154,12 @@ void esperar_queries(){
             case EJECUTAR: // Master avisa que hay una nueva query para que este worker ejecute
                 void* buffer = recibir_buffer(socket_master);
                 pthread_t ejecutar;
-                pthread_create(&ejecutar, NULL, manejar_ejecutar, buffer);
-                pthread_detach(ejecutar);
+                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                // NO hace falta hilo para ejecutar porque es una query a la vez
+                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                //pthread_create(&ejecutar, NULL, manejar_ejecutar, buffer);
+                //pthread_detach(ejecutar);
+                manejar_ejecutar(buffer);
                 log_info(loggerWorker, "Se recibio la operacion EJECUTAR");
                 break;
             //NUEVO!!!!!
@@ -609,7 +613,9 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
                     qid, marco_victima->file_tag, marco_victima->pagina_logica);
                     //unlock de memoria
                 void* contenido_victima = memoria.buffer + (indice_marco_victima * memoria.tamanio_marco);
-                *motivo = enviar_bloque_a_storage(qid, marco_victima, contenido_victima);
+                void* buffer_temporal = malloc(tamanio_bloque_storage);
+                memcpy(buffer_temporal, contenido_victima, tamanio_bloque_storage);
+                *motivo = enviar_bloque_a_storage(qid, marco_victima->pagina_logica, contenido_victima);
                 if (*motivo != RESULTADO_OK) {
                     log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, *motivo);
                     pthread_mutex_unlock(&mutex_tablas_paginas);
@@ -817,9 +823,8 @@ t_motivo ejecutar_commit(char* file_tag, int qid){
     return respuesta;
 }
 
-
 // FLUSH
-//Persiste todas las modificaciones de un File:Tag en Memoria Interna. Falta ejecutarlo en desalojo
+// Persiste todas las modificaciones de un File:Tag en Memoria Interna. Falta ejecutarlo en desalojo
 t_motivo ejecutar_flush(char* file_tag, int qid){
     log_info(loggerWorker, "Query %d: Iniciando FLUSH para %s", qid, file_tag);
 
@@ -835,20 +840,22 @@ t_motivo ejecutar_flush(char* file_tag, int qid){
     for (int i = 0; i < cantidad_paginas; i++) {
         pthread_mutex_lock(&mutex_tablas_paginas);
         t_pagina* pagina = list_get(tabla->paginas, i);
-        bool esta_presente = pagina->presente;
-        bool esta_sucia = pagina->modificado;
+        bool es_candidata = (pagina->presente && pagina->modificado);
         // int nro_marco = pagina->marco;
         // Por que esto aca del marco? no puede cambiar ponele?
         // En ese caso habria que extender el mutex?
         int nro_marco = pagina->marco;
         int nro_pagina_logica = pagina->num_pagina; // Para Storage
-        pthread_mutex_unlock(&mutex_tablas_paginas);
         t_marco *marcoPag = obtener_marco_de_pagina(file_tag, nro_pagina_logica);
-        if (esta_presente && esta_sucia) {
+        
+        if (es_candidata) {
+            void* buffer_temporal = malloc(tamanio_bloque_storage);
             void* contenido = memoria.buffer + (nro_marco * memoria.tamanio_marco);
-
-            t_motivo resultado = enviar_bloque_a_storage(qid, marcoPag, contenido);
-
+            memcpy(buffer_temporal, contenido, tamanio_bloque_storage);
+            pthread_mutex_unlock(&mutex_tablas_paginas);
+            
+            t_motivo resultado = enviar_bloque_a_storage(qid, nro_pagina_logica, buffer_temporal);
+            free(buffer_temporal);
             if (resultado != RESULTADO_OK) {
                 log_error(loggerWorker, "FLUSH FALLIDO pág %d. Motivo: %d", nro_marco, resultado);
                 return resultado; 
@@ -859,6 +866,8 @@ t_motivo ejecutar_flush(char* file_tag, int qid){
             pthread_mutex_unlock(&mutex_tablas_paginas);
             
             paginas_flusheadas++;
+        } else {
+            pthread_mutex_unlock(&mutex_tablas_paginas);
         }
     }
     log_info(loggerWorker, "FLUSH exitoso %s. Páginas: %d", file_tag, paginas_flusheadas);
@@ -1192,7 +1201,7 @@ t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, 
     return resultado;
 }
 
-t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque, void* contenido) {
+t_motivo enviar_bloque_a_storage(int qid, int nro_pagina_logica, void* contenido) {
     log_info(loggerWorker, "Query %d: Escribiendo en Storage (FLUSH) - File: %s, Pagina: %d", 
             qid, bloque->file_tag, bloque->pagina_logica); 
 
@@ -1207,15 +1216,14 @@ t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque, void* contenido) {
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch)); 
     agregar_a_paquete_string(paquete, nombreTag, strlen(nombreTag));   
-    agregar_a_paquete(paquete, &bloque->pagina_logica, sizeof(int));
-    agregar_a_paquete_string(paquete, contenido, strlen(contenido));
-    
+    agregar_a_paquete(paquete, nro_pagina_logica, sizeof(int));
+    agregar_a_paquete(paquete, contenido, tamanio_bloque_storage);
+    //agregar_a_paquete_string(paquete, contenido, strlen(contenido));
     // --- 3. Calcular dirección y serializar datos ---
-    int num_marco = (bloque - memoria.marcos);
-    void* direccion_datos = memoria.buffer + (num_marco * memoria.tamanio_marco);
+    //int num_marco = (bloque - memoria.marcos);
+    //void* direccion_datos = memoria.buffer + (num_marco * memoria.tamanio_marco);
 
-
-    agregar_a_paquete(paquete, direccion_datos, tamanio_bloque_storage); 
+    //agregar_a_paquete(paquete, direccion_datos, tamanio_bloque_storage); 
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
     free(copia);

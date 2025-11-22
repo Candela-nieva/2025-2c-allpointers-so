@@ -126,7 +126,7 @@ int reemplazo_lru();
 
 void notificar_fin_query_a_master(int qid, int motivo_op_code);
 
-t_motivo enviar_bloque_a_storage(int qid, t_marco* bloque, void* contenido);
+t_motivo enviar_bloque_a_storage(int qid, int nro_pagina_logica, void* contenido);
 t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
 
