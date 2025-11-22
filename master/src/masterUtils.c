@@ -140,7 +140,7 @@ void* atender_conexion(void* arg){
         case HANDSHAKE_QUERY:
             log_info(loggerMaster, "## Query Control Conectado - FD del socket: %d", fd);
             atender_QueryControl(fd);
-            close(fd);
+            //close(fd);
             break;
         case HANDSHAKE_WORKER:
             log_info(loggerMaster, "## Worker Conectado - FD del socket: %d", fd);
@@ -243,9 +243,12 @@ void atender_Worker(int fd){
 
             case WORKER_TO_MASTER_END:
                 t_motivo motivoExit = recibir_operacion(fd);
+                log_info(loggerMaster, "WORKER ID <%d> : indico fin de query %d, motivo : %d", id_worker, wcb->qid_asig, motivoExit);
                 t_qcb *qcbExit = buscar_qcb_por_ID(wcb->qid_asig);
                 enviar_mensaje_exit(qcbExit->socket, motivoExit);
-
+                agregar_a_exit(qcbExit);
+                sem_post(&hay_en_Exit);
+                return;
 
             default:
                 log_info(loggerMaster, "Operacion desconocida recibida del WORKER ID <%d> : %d", id_worker, op);
@@ -257,7 +260,10 @@ void atender_Worker(int fd){
 void enviar_mensaje_exit(int socketQuery, t_motivo motivo){
     t_paquete *paquete = crear_paquete(MASTER_TO_QC_END);
     agregar_a_paquete(paquete, &motivo, sizeof(int));
+    log_info(loggerMaster, "Se envia la Query mensaje exit motivo %d",motivo);
     enviar_paquete(paquete, socketQuery);
+    //cierro el socket aca
+    close(socketQuery);
     eliminar_paquete(paquete);
 }
 
@@ -457,7 +463,7 @@ void eliminar_qcb_diccionario(int qid) {
 
 void eliminar_qcb(void* element){
     t_qcb* qcb = (t_qcb*) element;
-    close(qcb->socket);
+    //close(qcb->socket);
     free(qcb->ruta_arch);
     free(qcb);
 }

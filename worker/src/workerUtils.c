@@ -227,8 +227,9 @@ void* manejar_ejecutar(void *buffer) {
 
 void notificar_fin_query_a_master(int qid, int motivo_op_code) { 
     t_paquete* p = crear_paquete(WORKER_TO_MASTER_END); // (Necesitas este op_code en protocolo.h)
-    agregar_a_paquete(p, &qid, sizeof(int));
+    //agregar_a_paquete(p, &qid, sizeof(int));
     agregar_a_paquete(p, &motivo_op_code, sizeof(int));
+    log_info(loggerWorker,"Se le notifica a master fin de query %d, Motivo : %d", qid,motivo_op_code);
     enviar_paquete(p, socket_master);
     eliminar_paquete(p);
 }
