@@ -234,17 +234,16 @@ void notificar_fin_query_a_master(int qid, int motivo_op_code) {
     eliminar_paquete(p);
 }
 
-
 // Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
-    
+
     bool es_end = false;
 
     if(!archivo_relativo) {
         log_info(loggerWorker, "Error: Ruta de archivo de Query %d no proporcionada.", qid);
         return;
     }
-    
+
     //Construir la ruta completa al archivo de query (PATH_SCRIPTS + "/" + archivo_relativo)
     char ruta_completa[1024];
     if (config_struct && config_struct->path_scripts) {
@@ -551,14 +550,15 @@ bool ya_esta_en_lista(t_list* lista, char* file_tag) {
 // WRITE
 t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid) {
 
-    usleep((useconds_t)retardo_memoria * 1000);  // Retardo por escritura en memoria
+    //usleep((useconds_t)retardo_memoria * 1000);  // Retardo por escritura en memoria (el retardo ya se se hace en ejecutar_instruccion)
     
     int tam_pagina= tamanio_bloque_storage; // tamaño de bloque de storage
-    int offset = direccion_base % tam_pagina;
     int pagina_logica = direccion_base / tam_pagina;
+    int offset = direccion_base % tam_pagina;
     int bytes_restantes = strlen(contenido);
+    //int pos_buffer = 0; // posición dentro de 'contenido'
     
-    char* ptr_contenido = contenido;
+    char* ptr_contenido = contenido; // puntero para recorrer el contenido a escribir
     
     /*char* file_origen;
     char* tag_origen ;
@@ -566,12 +566,15 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
 
     t_tabla_paginas* tabla = obtener_o_crear_tabla_paginas(tag);
     
-      // PARA ESCRIBIR EN TODAS LAS PÁGINAS NECESARIAS ------
+    // PARA ESCRIBIR EN TODAS LAS PÁGINAS NECESARIAS (iteramos pagina por pagina hasta terminar de escribir todos los bytes)------
     while (bytes_restantes > 0){
+        
+        t_tabla_paginas* tabla = obtener_o_crear_tabla_paginas(tag);
+        
         // 1. Verificar si existe entrada y si está presente
         t_pagina* pagina = buscar_pagina(tabla, pagina_logica);
 
-        // Si no esta presente PAGE FAULT
+        // Si no esta presente PAGE FAULT (la traimos de storage)
         if(!pagina || !pagina->presente) {
             t_motivo motivo;
             pagina = manejar_page_fault(tag, pagina_logica, tabla, qid, &motivo);
@@ -581,15 +584,15 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
             }
         }
     
-        // 2. Calcular lo que se puede escribir en esta página
+        // 2. Calcular lo que se puede escribir en esta página (cuantos bytes escribimos en esta pagina)
         int espacio_en_pagina = tam_pagina - offset;
-        int a_escribir;
+        int a_escribir; // bytes a escribir en esta iteración
         if (bytes_restantes < espacio_en_pagina)
-        a_escribir = bytes_restantes;
+        a_escribir = bytes_restantes; // escribimos todo lo que queda
         else
-        a_escribir = espacio_en_pagina;
+        a_escribir = espacio_en_pagina; // escribimos hasta llenar la página
 
-        // direccion fisica
+        // Obtengo marco fisico y puntero (direccion fisica)
         int marco = pagina->marco;
         char* direccion_marco = direccion_fisica_marco(marco);
         void* direccion_destino = (char*)direccion_marco + offset;
@@ -643,8 +646,10 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
                     qid, marco_victima->file_tag, marco_victima->pagina_logica);
                     //unlock de memoria
                 void* contenido_victima = memoria.buffer + (indice_marco_victima * memoria.tamanio_marco);
-                void* buffer_temporal = malloc(tamanio_bloque_storage);
-                memcpy(buffer_temporal, contenido_victima, tamanio_bloque_storage);
+                void* buffer_temporal = malloc(tamanio_bloque_storage); // esto se usa aca?
+                memcpy(buffer_temporal, contenido_victima, tamanio_bloque_storage); // esto se usa aca?
+                // aca no deberias usar el file_tag victima?
+                // *motivo = enviar_bloque_a_storage(qid, file_tag_victima, marco_victima->pagina_logica, contenido_victima);
                 *motivo = enviar_bloque_a_storage(qid, file_tag, marco_victima->pagina_logica, contenido_victima);
                 if (*motivo != RESULTADO_OK) {
                     log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, *motivo);
@@ -840,7 +845,7 @@ t_motivo ejecutar_commit(char* file_tag, int qid){
     manejar_errores(motivo, qid);
 
     log_info(loggerWorker, "Query %d: Iniciando COMMIT para %s", qid, file_tag);
-    t_paquete* paquete = crear_paquete(COMMIT);
+    t_paquete* paquete = crear_paquete(COMMIT_TAG);
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch));
     agregar_a_paquete_string(paquete, nombreTag, strlen(nombreTag));
@@ -914,7 +919,7 @@ t_motivo ejecutar_delete(char* file_tag, int qid){
     deserializar_fileTag(copia, &file, &tag);
 
     // Mando paquete a storage
-    t_paquete* paquete = crear_paquete(DELETE);
+    t_paquete* paquete = crear_paquete(DELETE_TAG);
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, file, strlen(file));
     agregar_a_paquete_string(paquete, tag, strlen(tag));

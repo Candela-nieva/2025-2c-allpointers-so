@@ -334,7 +334,7 @@ void atenderDelete(int fd_conexion, void* buffer){
 
     recibir_QID_nombreArch_nombreTag(buffer,&QID, &nombreArch, &nombreTag);
     free(buffer);
-
+    log_info(loggerStorage, "Atendiendo DELETE de %s:%s", nombreArch, nombreTag);
     t_motivo resultado = op_delete_tag(nombreArch, nombreTag, QID);
     enviar_operacion(fd_conexion,resultado);
 
@@ -1010,6 +1010,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
 t_motivo op_read_block(char* nombreArch, char *nombreTag, int nroBloque, char **contenido, int query_id){
     usleep(retardo_operacion  * 1000);
     t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
+    
     char *pathBloq = obtener_path_bloq_logico(tag,nroBloque);
     if(nroBloque >= tag->logBlocks || nroBloque < 0){
         log_info(loggerStorage, "Fallo : Lectura fuera de rango %s:%s", nombreArch, nombreTag);
@@ -1051,11 +1052,12 @@ t_motivo op_delete_tag(char* nombreArch, char *nombreTag, int query_id){
 
 t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
     t_fcb *fcb = malloc(sizeof(t_fcb));
-    fcb->nombreArch = nombreNuevoArch;
+    fcb->nombreArch = strdup(nombreNuevoArch);
     fcb->tags = dictionary_create();
     t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreNuevoArch, fcb->tags);
     nuevoTag->physicalBlocks = list_create();
     dictionary_put(diccionario_archivos,fcb->nombreArch,fcb);
+    log_info(loggerStorage, "FILE:TAG = %s:%s", fcb->nombreArch, nuevoTag->nombreTag);
     return fcb;
 }
 
@@ -1065,7 +1067,9 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
     sprintf(pathNuevoTag, "%s/%s/%s", path_files, nombreArch, nombreNuevoTag);
     tag->pathTag = pathNuevoTag;
     log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag);
-    tag->nombreTag = strdup(nombreNuevoTag);
+    tag->nombreTag = strdup (nombreNuevoTag);
+    log_info(loggerStorage,"Nuevo Nombre Tag = %s", tag->nombreTag);
+    //tag->nombreTag = nombreNuevoTag;
     tag->tamanio = 0;
     //tag->physicalBlocks = list_create();
     tag->logBlocks = 0;
@@ -1082,6 +1086,7 @@ t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
         return NULL;
     }
     t_tag *tag = dictionary_get(fcb->tags, Tag);
+    log_info(loggerStorage, "Enviaron %s:%s, encontramos %s:%s", Arch, Tag, fcb->nombreArch, tag->nombreTag);
     return tag;
 }
 
@@ -1106,12 +1111,15 @@ bool tagRepetido(char *nombreArch, char *nombreTag){
 
 void eliminarStructTag(char* nombreArch, char *nombreTag){
     t_fcb *fcb = dictionary_get(diccionario_archivos,nombreArch);
-    t_tag *tag = dictionary_remove(fcb->tags,nombreArch);
-    free(tag->nombreTag);
-    free(tag->pathTag);
-    pthread_mutex_destroy(&tag->mutexTag);
-    list_destroy_and_destroy_elements(tag->physicalBlocks, free);
-    free(tag);
+    t_tag *tag = dictionary_remove(fcb->tags,nombreTag);
+    if(tag != NULL) {
+        log_info(loggerStorage, "Se eliminara %s:%s", nombreArch, tag->nombreTag);
+        free(tag->nombreTag);
+        free(tag->pathTag);
+        pthread_mutex_destroy(&tag->mutexTag);
+        list_destroy_and_destroy_elements(tag->physicalBlocks, free);
+        free(tag);
+    }
 }
 
 void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){

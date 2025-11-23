@@ -242,7 +242,11 @@ void atender_Worker(int fd){
                 break;
 
             case WORKER_TO_MASTER_END:
-                t_motivo motivoExit = recibir_operacion(fd);
+                //t_motivo motivoExit = recibir_operacion(fd);
+                void *bufferMotivo = recibir_buffer(fd);
+                t_motivo motivoExit;
+                memcpy(&motivoExit, bufferMotivo, sizeof(int));
+                free(bufferMotivo);
                 log_info(loggerMaster, "WORKER ID <%d> : indico fin de query %d, motivo : %d", id_worker, wcb->qid_asig, motivoExit);
                 t_qcb *qcbExit = buscar_qcb_por_ID(wcb->qid_asig);
                 enviar_mensaje_exit(qcbExit->socket, motivoExit);

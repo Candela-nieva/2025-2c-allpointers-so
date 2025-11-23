@@ -103,11 +103,11 @@ void recibir_mensaje_read(int socket_master){
 }
 
 void recibir_mensaje_exit(int socket_master){
-    int motivo_int = recibir_operacion(socket_master);
+    void *bufferMotivo = recibir_buffer(socket_master);
+    t_motivo motivoExit;
+    memcpy(&motivoExit, bufferMotivo, sizeof(int));
 
-    t_motivo motivo = (t_motivo) motivo_int;
-
-    const char* string_motivo = obtener_motivo_string(motivo);
+    const char* string_motivo = obtener_motivo_string(motivoExit);
 
     // Log obligatorio
     log_info(loggerQueryCTRL, "## Query Finalizada - %s", string_motivo);
