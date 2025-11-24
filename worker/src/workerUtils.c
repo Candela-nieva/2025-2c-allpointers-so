@@ -146,24 +146,18 @@ void esperar_queries(){
             case EJECUTAR: // Master avisa que hay una nueva query para que este worker ejecute
                 void* buffer = recibir_buffer(socket_master);
                 pthread_t ejecutar;
-                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                // NO hace falta hilo para ejecutar porque es una query a la vez
-                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                //pthread_create(&ejecutar, NULL, manejar_ejecutar, buffer);
-                //pthread_detach(ejecutar);
                 log_info(loggerWorker, "Se recibio la operacion EJECUTAR");
                 manejar_ejecutar(buffer);
                 break;
-            //NUEVO!!!!!
             case DESALOJO: // Debido al algoritmo utilizado en el Master
                 log_info(loggerWorker, "Master ha indicado DESALOJO de Query actual.");
                 atomic_store(&hay_interrupt,1);
                 break;
 
             // ESTO NO SE SI VA ACA!! por ahora queda acá, pero no tiene mucho sentido, en qué casos recibiriamos esto(?)    
-            case FIN_QUERY: // Master avisa que NO hay mas queries para que este worker ejecute
+            /*case FIN_QUERY: // Master avisa que NO hay mas queries para que este worker ejecute
                 log_info(loggerWorker, "Master ha indicado FIN_QUERY. Finalizando espera de queries.");
-                return; // Salir de la función para finalizar la espera de queries
+                return; // Salir de la función para finalizar la espera de queries*/
             
             default:
                 log_info(loggerWorker, "Operacion recibida desconocida: %d", cod_op);
@@ -226,7 +220,7 @@ void* manejar_ejecutar(void *buffer) {
 //////////////////////////////// query interpreter ////////////////////////////
 
 void notificar_fin_query_a_master(int qid, int motivo_op_code) { 
-    t_paquete* p = crear_paquete(WORKER_TO_MASTER_END); // (Necesitas este op_code en protocolo.h)
+    t_paquete* p = crear_paquete(WORKER_TO_MASTER_END);
     //agregar_a_paquete(p, &qid, sizeof(int));
     agregar_a_paquete(p, &motivo_op_code, sizeof(int));
     log_info(loggerWorker,"Se le notifica a master fin de query %d, Motivo : %d", qid,motivo_op_code);
@@ -362,6 +356,15 @@ void trim_newline(char* s) {
         s[len - 1] = '\0';
         len--;
     }
+}
+
+// Función para saber si un string ya está en la lista (para no repetir)
+bool ya_esta_en_lista(t_list* lista, char* file_tag) {
+    for(int i=0; i<list_size(lista); i++) {
+        char* item = list_get(lista, i);
+        if(strcmp(item, file_tag) == 0) return true;
+    }
+    return false;       // la funcion manejar_e
 }
 // Para mapear las instrucciones
 tipo_instruccion obtener_instruccion(const char* op) {
@@ -535,15 +538,6 @@ t_motivo ejecutar_truncate(char* file_tag, int nuevo_tam, int qid) {
     int resultado = recibir_operacion(socket_storage);
     t_motivo motivo = (t_motivo) resultado;
     return motivo;
-}
-
-// Función para saber si un string ya está en la lista (para no repetir)
-bool ya_esta_en_lista(t_list* lista, char* file_tag) {
-    for(int i=0; i<list_size(lista); i++) {
-        char* item = list_get(lista, i);
-        if(strcmp(item, file_tag) == 0) return true;
-    }
-    return false;       // la funcion manejar_e
 }
 
 // WRITE
@@ -752,37 +746,13 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
     }
 
     // 7) Enviar contenidos al Master
-    t_paquete* paquete = crear_paquete(READ_BLOCK); //no sé si el nombre está bien
-    agregar_a_paquete(paquete, &qid, sizeof(int));
-    agregar_a_paquete(paquete, &tam, sizeof(int));
+    t_paquete *paquete = crear_paquete(MASTER_TO_QC_READ_RESULT);
+    agregar_a_paquete_string(paquete, file_origen, strlen(file_origen));
+    agregar_a_paquete_string(paquete, tag_origen, strlen(tag_origen));
+    agregar_a_paquete_string(paquete, buffer_lectura, strlen(buffer_lectura));
     enviar_paquete(paquete, socket_master);
     eliminar_paquete(paquete);
 
-    int resultado = recibir_operacion(socket_master);
-    t_motivo motivo = (t_motivo) resultado;
-
-    if(motivo == RESULTADO_OK){
-        void *buffer = recibir_buffer(socket_master);
-        char *contenido;
-        int tamContenido;
-        int offset = 0;
-        memcpy(&tamContenido, buffer + offset, sizeof(int));
-        offset += sizeof(int);
-        contenido = malloc(tamContenido + 1);
-        memcpy(contenido, buffer + offset, tamContenido);
-        contenido[tamContenido] = '\0';
-        free(buffer);
-        //se leyo el contenido
-        t_paquete *paquete = crear_paquete(MASTER_TO_QC_READ_RESULT);
-        agregar_a_paquete_string(paquete,file_origen, strlen(file_origen));
-        agregar_a_paquete_string(paquete, tag_origen, strlen(tag_origen));
-        agregar_a_paquete_string(paquete,contenido, strlen(contenido));
-        enviar_paquete(paquete, socket_master);
-        eliminar_paquete(paquete);
-        free(contenido);
-    } else {
-        manejar_errores(motivo, qid);
-    }
     log_info(loggerWorker, "Query %d: Accion: LEER - Direccion fisica: %d - Valor: %s",
              qid, direccion_base, buffer_lectura); // LOG OBLIGATORIO
 
@@ -1237,7 +1207,7 @@ t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, 
 
 t_motivo enviar_bloque_a_storage(int qid, char* file_tag, int nro_pagina_logica, void* contenido) {
     log_info(loggerWorker, "Query %d: Enviando a Storage (Write) -> Archivo: %s, Pagina: %d", 
-             qid, file_tag, nro_pagina_logica);
+            qid, file_tag, nro_pagina_logica);
     
     // --- 1. PARSEO DEL FILE_TAG ---
     char* copia = strdup(file_tag);
@@ -1251,7 +1221,8 @@ t_motivo enviar_bloque_a_storage(int qid, char* file_tag, int nro_pagina_logica,
     agregar_a_paquete_string(paquete, nombreArch, strlen(nombreArch)); 
     agregar_a_paquete_string(paquete, nombreTag, strlen(nombreTag));   
     agregar_a_paquete(paquete, &nro_pagina_logica, sizeof(int));
-    agregar_a_paquete(paquete, contenido, tamanio_bloque_storage);
+
+    agregar_a_paquete_string(paquete, (char*)contenido, tamanio_bloque_storage);
     //agregar_a_paquete_string(paquete, contenido, strlen(contenido));
     // --- 3. Calcular dirección y serializar datos ---
     //int num_marco = (bloque - memoria.marcos);

@@ -73,32 +73,35 @@ void recibir_mensaje_read(int socket_master){
 
     int offset = 0;
 
+    //Lectura de nombre del Archivo
+
+    memcpy(&(len_nombreArch),buffer, sizeof(int));
+    offset += sizeof(int);
+    nombreArch = malloc(len_nombreArch + 1);
+
+    memcpy(nombreArch,buffer + offset, len_nombreArch);
+    nombreArch[len_nombreArch] = '\0';
+
+    //Lectura de nombre del Tag
+    offset += len_nombreArch;
+    
+    memcpy(&(len_nombreTag),buffer + offset, sizeof(int));
+    offset += sizeof(int);
+    nombreTag = malloc(len_nombreTag + 1);
+
+    memcpy(nombreTag,buffer + offset, len_nombreTag);
+    nombreTag[len_nombreTag] = '\0';
+
+    offset += len_nombreTag;
+    
     //Lectura de contenido
-    memcpy(&(len_contenido),buffer + offset, sizeof(int));
+    memcpy(&(len_contenido), buffer + offset, sizeof(int));
     offset += sizeof(int);
     contenido = malloc(len_contenido + 1);
 
     memcpy(contenido,buffer + offset, len_contenido);
     contenido[len_contenido] = '\0';
-
-    //Lectura de nombre del Archivo
-
-    memcpy(&(len_nombreArch),buffer + offset + len_contenido, sizeof(int));
-    offset += sizeof(int);
-    nombreArch = malloc(len_nombreArch + 1);
-
-    memcpy(nombreArch,buffer + offset + len_contenido, len_nombreArch);
-    nombreArch[len_nombreArch] = '\0';
-
-    //Lectura de nombre del Tag
-
-    memcpy(&(len_nombreTag),buffer + offset + len_contenido + len_nombreArch, sizeof(int));
-    offset += sizeof(int);
-    nombreTag = malloc(len_nombreTag + 1);
-
-    memcpy(nombreTag,buffer + offset + len_contenido + len_nombreArch, len_nombreTag);
-    nombreTag[len_nombreTag] = '\0';
-
+    free(buffer);
     log_info(loggerQueryCTRL, "## Lectura realizada: File - %s : %s, contenido: %s", nombreArch, nombreTag, contenido); // LOG OBLIGATORIO
 }
 

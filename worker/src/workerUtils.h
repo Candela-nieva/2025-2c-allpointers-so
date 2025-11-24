@@ -96,23 +96,28 @@ void inicializar_config(void);
 void crear_logger ();
 void cargar_config ();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
-void esperar_queries();
 void* iniciar_conexion_storage(void* arg);
-void *manejar_ejecutar(void* buffer);
 void* iniciar_conexion_master(void* arg);
+
+void esperar_queries();
+void *manejar_ejecutar(void* buffer);
 void trim_newline(char* s);
-bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* archivos_abiertos);
-void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
-tipo_instruccion obtener_instruccion(const char* op);
 
 bool es_mismo_archivo(void* elemento);
 void registrar_archivo_abierto(t_list* lista, char* file_tag);
 
-//t_bloque_memoria* buscar_bloque(char* tag, int bloque_id);
 t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid, t_motivo *motivo);
 
 void inicializar_memoria_interna();
+void manejar_errores(t_motivo motivo, int qid);
+void deserializar_fileTag(char* fileTag, char **file, char **tag);
+void notificar_fin_query_a_master(int qid, int motivo_op_code);
+
 //============= EJECUTAR INSTRUCCIONES ==============
+bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* archivos_abiertos);
+void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
+tipo_instruccion obtener_instruccion(const char* op);
+
 t_motivo ejecutar_create(char* file_tag, int qid);
 t_motivo ejecutar_truncate(char* file_tag, int qid, int nuevo_tam);
 t_motivo ejecutar_write(char* file_tag, int direccionBase, char* contenido, int qid);
@@ -121,25 +126,26 @@ t_motivo ejecutar_delete(char* file_tag, int qid);
 t_motivo ejecutar_commit(char* file_tag, int qid);
 t_motivo ejecutar_tag(char* origen, char* destino, int qid);
 t_motivo ejecutar_flush(char* file_tag, int qid);
-void manejar_errores(t_motivo motivo, int qid);
-void deserializar_fileTag(char* fileTag, char **file, char **tag);
 
-int seleccionar_victima(int quid);
-int seleccionar_bloque_victima();
-int reemplazo_clock_modificado();
-int reemplazo_lru();
-
-void notificar_fin_query_a_master(int qid, int motivo_op_code);
-
+//============ AUXILIARES PARA WRITE Y READ ==================
 t_motivo enviar_bloque_a_storage(int qid, char* file_tag, int nro_pagina_logica, void* contenido);
 t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
-
 void inicializar_tablas_paginas();
 void liberar_tablas_paginas();
 t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag);
 t_pagina* buscar_pagina(t_tabla_paginas* tabla, int num_pagina);
 t_marco* obtener_marco_de_pagina(char* file_tag, int num_pagina);
 int obtener_indice_marco_de_pagina(char* file_tag, int num_pagina);
+
+//========== AUXILIARES PARA FLUSH ================
+
+
+//============= ALGORITMOS DE REEMPLAZO
+int seleccionar_victima(int quid);
+int seleccionar_bloque_victima();
+int reemplazo_clock_modificado();
+int reemplazo_lru();
+
 
 #endif

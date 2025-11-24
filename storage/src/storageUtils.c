@@ -826,8 +826,9 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
                     log_info(loggerStorage, "##%d - %s : %s Bloque Lógico %06d se reasigna de %d a %d", query_id, nombreArch, nombreTag, i, bloqActual, *nroFis);
                     liberar_bloque_si_no_referenciado(bloqActual, query_id);
                     free(nuevoBloqPath);
+                    
                 }
-                free(bloqFis);
+                //free(bloqFis);
             }else{
                 //CASO CONTENIDO ÚNICO
                 //Para este punto conviene que ancho y pathHash sean variable Global
@@ -949,8 +950,6 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
         int bloqFis = *bloqActual;
         pthread_mutex_unlock(&tag->mutexTag);
 
-        
-
         log_info(loggerStorage, "## LE CORRESPONDE EL BLOQFIS %d", nroBloque);
         char *pathBloqFis = obtener_path_bloque_fisico(bloqFis);
         char *pathBloqLog = obtener_path_bloq_logico(tag, nroBloque);
@@ -958,7 +957,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
             //buscar bloque fisico al que esta asociado el link del bloque logico
         struct stat st;
         if (stat(pathBloqFis, &st) == 0) {
-            if (st.st_nlink == 2) { //2 referencias, la del archivo original, y la del hardlink
+            if (st.st_nlink == 2 && bloqFis != 0) {
                 //marcar_libre_en_bitmap(bloque_fisico);
                 FILE *bloqL = fopen(pathBloqLog, "r+");
                 if(!bloqL){
