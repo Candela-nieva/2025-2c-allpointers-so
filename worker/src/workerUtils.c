@@ -558,7 +558,7 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
     int bytes_restantes = strlen(contenido);
     //int pos_buffer = 0; // posición dentro de 'contenido'
     
-    char* ptr_contenido = contenido; // puntero para recorrer el contenido a escribir
+    char* ptr_contenido = contenido; // puntero para recorrer el contenido a escribir (avanza a medida que voy escribiendo)
     
     /*char* file_origen;
     char* tag_origen ;
@@ -569,12 +569,10 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
     // PARA ESCRIBIR EN TODAS LAS PÁGINAS NECESARIAS (iteramos pagina por pagina hasta terminar de escribir todos los bytes)------
     while (bytes_restantes > 0){
         
-        t_tabla_paginas* tabla = obtener_o_crear_tabla_paginas(tag);
-        
         // 1. Verificar si existe entrada y si está presente
         t_pagina* pagina = buscar_pagina(tabla, pagina_logica);
 
-        // Si no esta presente PAGE FAULT (la traimos de storage)
+        // Si no esta presente PAGE FAULT (la traemos de storage)
         if(!pagina || !pagina->presente) {
             t_motivo motivo;
             pagina = manejar_page_fault(tag, pagina_logica, tabla, qid, &motivo);
@@ -648,9 +646,8 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
                 void* contenido_victima = memoria.buffer + (indice_marco_victima * memoria.tamanio_marco);
                 void* buffer_temporal = malloc(tamanio_bloque_storage); // esto se usa aca?
                 memcpy(buffer_temporal, contenido_victima, tamanio_bloque_storage); // esto se usa aca?
-                // aca no deberias usar el file_tag victima?
-                // *motivo = enviar_bloque_a_storage(qid, file_tag_victima, marco_victima->pagina_logica, contenido_victima);
-                *motivo = enviar_bloque_a_storage(qid, file_tag, marco_victima->pagina_logica, contenido_victima);
+                
+                *motivo = enviar_bloque_a_storage(qid, file_tag_victima, marco_victima->pagina_logica, contenido_victima);
                 if (*motivo != RESULTADO_OK) {
                     log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, *motivo);
                     pthread_mutex_unlock(&mutex_tablas_paginas);
