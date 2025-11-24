@@ -242,7 +242,7 @@ void atenderTag(int fd_conexion, void* buffer){
     nombreNuevoTag[tamNuevoTag] = '\0';
     free(buffer);
     //enviar_operacion(fd_conexion, resultado); 
-    t_motivo resultado = op_tag(nombreArch, nombreTag, nombreNuevoTag,nombreNuevoTag,QID);
+    t_motivo resultado = op_tag(nombreArch, nombreTag, archDestino,nombreNuevoTag,QID);
     enviar_operacion(fd_conexion,resultado);
     if(archDestino)
         free(archDestino);
@@ -747,6 +747,8 @@ void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bl
 
 t_motivo op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino,char *nombreNuevoTag, int query_id){
     usleep(retardo_operacion  * 1000);
+    log_info(loggerStorage, "Operación TAG de %s:%s a %s:%s", nombreArch, nombreTagOrigen, nombreArchDestino, nombreNuevoTag);
+    log_info(loggerStorage, "buscando file: %s", nombreArchDestino);
     t_fcb* fcbDestino = dictionary_get(diccionario_archivos, nombreArchDestino);
     if(!fcbDestino){
         return ERROR_FILE_INEXISTENTE;

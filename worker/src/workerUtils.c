@@ -448,9 +448,8 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
             motivo = ejecutar_read(file_tag, direccion, tam, qid);
             break;
         case TAG:
-            origen = strtok(NULL, " ");
             destino = strtok(NULL, ""); 
-            motivo = ejecutar_tag(origen, destino, qid);
+            motivo = ejecutar_tag(file_tag, destino, qid);
             break;
         case COMMIT:
             motivo = ejecutar_commit(file_tag, qid);
@@ -644,8 +643,8 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
                     qid, marco_victima->file_tag, marco_victima->pagina_logica);
                     //unlock de memoria
                 void* contenido_victima = memoria.buffer + (indice_marco_victima * memoria.tamanio_marco);
-                void* buffer_temporal = malloc(tamanio_bloque_storage); // esto se usa aca?
-                memcpy(buffer_temporal, contenido_victima, tamanio_bloque_storage); // esto se usa aca?
+                //void* buffer_temporal = malloc(tamanio_bloque_storage); // esto se usa aca?
+                //memcpy(buffer_temporal, contenido_victima, tamanio_bloque_storage); // esto se usa aca?
                 
                 *motivo = enviar_bloque_a_storage(qid, file_tag_victima, marco_victima->pagina_logica, contenido_victima);
                 if (*motivo != RESULTADO_OK) {
@@ -726,10 +725,6 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
 
         }
 
-        //t_marco* frame = &memoria.marcos[marco];
-        //frame->en_uso = true;
-        //frame->ultima_ref = time(NULL);
-
         // 3) Establecer cuántos bytes leer en esta iteración
         int bytes_a_leer = memoria.tamanio_marco - offset_inicial;
         if (bytes_a_leer > bytes_restantes) bytes_a_leer = bytes_restantes;
@@ -798,15 +793,16 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
 // TAG
 t_motivo ejecutar_tag(char* origen, char* destino, int qid) {
     // Separo el origen
+    char* copiaOrigen = strdup(origen);
     char* file_origen;
     char* tag_origen;
-    deserializar_fileTag(origen, &file_origen, &tag_origen);
+    deserializar_fileTag(copiaOrigen, &file_origen, &tag_origen);
 
     // Separo el destino
+    char* copiaDestino = strdup(destino);
     char* file_destino;
     char* tag_destino;
-    deserializar_fileTag(destino, &file_destino, &tag_destino);
-
+    deserializar_fileTag(copiaDestino, &file_destino, &tag_destino);
     log_info(loggerWorker, "Query %d: Solicitando TAG en Storage -> Origen [%s:%s], Destino [%s:%s]",
         qid, file_origen, tag_origen, file_destino, tag_destino);
 
@@ -820,8 +816,8 @@ t_motivo ejecutar_tag(char* origen, char* destino, int qid) {
     enviar_paquete(paquete, socket_storage);
     eliminar_paquete(paquete);
 
-    free(origen);
-    free(destino);
+    free(copiaOrigen);
+    free(copiaDestino);
 
     // Espero respuesta..
     int resultado = recibir_operacion(socket_storage);
