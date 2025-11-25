@@ -381,7 +381,6 @@ void inicializar_montaje(){
     freshStart();
     if(fresh_start)
         initialFile();
-    //initialFile();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
 }
 
@@ -647,14 +646,19 @@ void crear_physical_blocks() {
 void initialFile(){
     op_create("initial_file","BASE", 0);
     op_truncate("initial_file","BASE", tam_bloq, 0);
-    void *escrituraInicial = malloc(tam_bloq);
-    memset(escrituraInicial, 0, tam_bloq);
+    char escrituraInicial[tam_bloq + 1];
+    memset(escrituraInicial, '0', (tam_bloq));
+    escrituraInicial[tam_bloq] = '\0';
     op_write_block("initial_file","BASE", 0,escrituraInicial, 0);
-    free(escrituraInicial);
-    op_commit("initial_file","BASE", 0);
+    //free(escrituraInicial);
+    char *contALeer;
+    op_read_block("initial_file","BASE", 0,&contALeer, 0);
+    //log_info(loggerStorage,"se Leyo : %s", contALeer);
+    free(contALeer);
+    /*op_commit("initial_file","BASE", 0);
     op_create("file2","otroTag", 0);
     op_truncate("initial_file","BASE", tam_bloq, 0);
-    op_tag("initial_file","BASE","file2","BASE2", 0);
+    op_tag("initial_file","BASE","file2","BASE2", 0);*/
 }
 
 //==========BITMAP==========
@@ -1062,7 +1066,8 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
             //buscar bloque fisico al que esta asociado el link del bloque logico
         struct stat st;
         if (stat(pathBloqFis, &st) == 0) {
-            if (st.st_nlink == 2 && bloqFis != 0) {
+            
+            if (st.st_nlink == 2) {
                 //marcar_libre_en_bitmap(bloque_fisico);
                 FILE *bloqL = fopen(pathBloqLog, "r+");
                 if(!bloqL){
