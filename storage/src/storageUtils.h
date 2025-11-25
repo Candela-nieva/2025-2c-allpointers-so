@@ -13,7 +13,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <errno.h>
-
+#include <dirent.h>
+#include <sys/types.h>
 
 typedef struct {
     char* modulo;
@@ -76,7 +77,7 @@ void inicializar_config(void);
 void cargar_config();
 void crear_logger();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
-
+void recuperar_tags_file(char *nombre_archivo, t_fcb *file);
 //==========CONEXIONES==========
 void iniciar_servidor_multihilo(void);
 void* atender_worker(void* arg);
@@ -106,6 +107,8 @@ void crear_directorio(char* path, char* nombreDirectorio, char *nuevoPath);
 void crear_BlocksHashIndex();
 void crear_physical_blocks();
 void initialFile();
+void recuperar_estructuras_FS();
+void recargar_bitmap();
 //char *completar_ceros(int aCompletar);
 //==========BITMAP==========
 int buscar_bloque_libre(int query_id);

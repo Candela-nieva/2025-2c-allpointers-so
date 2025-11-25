@@ -277,7 +277,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
 
     // 2. Bucle principal de ejecución
     // Leemos la primera línea a ejecutar (la que corresponde a pc_inicial)
-    while (fgets(linea, sizeof(linea), file) != NULL) {
+    while (fgets(linea, sizeof(linea), file) != NULL) { // Mientras haya líneas por leer (fgets lee una línea)
         
         trim_newline(linea);
 
@@ -311,7 +311,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
             enviar_paquete(paquete, socket_master);
             eliminar_paquete(paquete);
             
-            log_info(loggerWorker, "## Query %d: Desalojada por pedido del Master. PC guardado: %d", qid, pc_siguiente);
+            log_info(loggerWorker, "## Query %d: Desalojada por pedido del Master. PC guardado: %d", qid, pc_siguiente); // LOG OBLIGATORIO
             
             list_destroy_and_destroy_elements(archivos_abiertos, free);
             fclose(file);
@@ -412,7 +412,7 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
 
     tipo_instruccion inst_tipo = obtener_instruccion(op);
 
-    char* file_tag = strtok(NULL, " ");
+    char* file_tag = strtok(NULL, " "); // 
     log_info(loggerWorker, "File_Tag a operar : %s", file_tag);
     // Si escribimos, leemos, creamos tag o truncamos, el archivo queda "abierto" o potencialmente modificado
     if (file_tag != NULL && archivos_abiertos != NULL)

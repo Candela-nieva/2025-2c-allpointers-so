@@ -101,8 +101,15 @@ void recibir_mensaje_read(int socket_master){
 
     memcpy(contenido,buffer + offset, len_contenido);
     contenido[len_contenido] = '\0';
+    
+    // Liberacion de memoria
     free(buffer);
+    
     log_info(loggerQueryCTRL, "## Lectura realizada: File - %s : %s, contenido: %s", nombreArch, nombreTag, contenido); // LOG OBLIGATORIO
+
+    free(nombreArch);
+    free(nombreTag);
+    free(contenido);
 }
 
 void recibir_mensaje_exit(int socket_master){

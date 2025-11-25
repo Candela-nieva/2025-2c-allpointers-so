@@ -379,9 +379,8 @@ void inicializar_montaje(){
     cargar_config_hashIndex();
     cargar_config_superBlock();
     freshStart();
-    if(fresh_start) {
+    if(fresh_start)
         initialFile();
-    }
     //initialFile();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
 }
@@ -395,7 +394,6 @@ void cargar_config_hashIndex(){
     char path_blocks_hash[256];
     sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
     configHash = config_create(path_blocks_hash);
-
 }
 
 void cargar_config_superBlock(){
@@ -419,9 +417,10 @@ void cargar_config_superBlock(){
 
 void freshStart(){
     verificar_freshStart();
-    if(fresh_start) {
+    if(fresh_start)
         formateo();
-    }
+    else
+        recuperar_estructuras_FS();
 }
 
 void verificar_freshStart(){
@@ -435,6 +434,123 @@ void verificar_freshStart(){
 void formateo() {
     limpiar_fs();
     recrear_fs();
+}
+
+void recuperar_estructuras_FS() {
+    log_info(loggerStorage, "Iniciando recuperación de FileSystem existente...");
+    DIR *dir_files = opendir(path_files);
+    if (dir_files == NULL) {
+        log_error(loggerStorage, "No se pudo abrir el directorio de files para recuperación.");
+        return;
+    }
+
+    struct dirent *entrada_archivo;
+    while ((entrada_archivo = readdir(dir_files)) != NULL) {
+        if (strcmp(entrada_archivo->d_name, ".") == 0 || strcmp(entrada_archivo->d_name, "..") == 0)
+            continue;
+
+        char* nombre_archivo = entrada_archivo->d_name;
+        
+        t_fcb *fcb = malloc(sizeof(t_fcb));
+        fcb->nombreArch = strdup(nombre_archivo);
+        fcb->tags = dictionary_create();
+        dictionary_put(diccionario_archivos, fcb->nombreArch, fcb);
+        
+        log_info(loggerStorage, "Recuperado FCB: %s", nombre_archivo);
+
+        recuperar_tags_file(nombre_archivo, fcb);
+    }
+    free(entrada_archivo);
+    closedir(dir_files);
+    recargar_bitmap();
+    log_info(loggerStorage, "Recuperación finalizada.");
+    
+}
+
+void recuperar_tags_file(char *nombre_archivo, t_fcb *file){
+    char path_archivo_completo[512];
+    sprintf(path_archivo_completo, "%s/%s", path_files, nombre_archivo);
+        
+    DIR *dir_tags = opendir(path_archivo_completo);
+    if (dir_tags == NULL){
+        log_error(loggerStorage, "No se pudo abrir el directorio de tag para recuperación.");
+        return;
+    }
+    struct dirent *entrada_tag;
+    while ((entrada_tag = readdir(dir_tags)) != NULL) {
+        if (strcmp(entrada_tag->d_name, ".") == 0 || strcmp(entrada_tag->d_name, "..") == 0)
+            continue;
+        char* nombre_tag = entrada_tag->d_name;
+        t_metadata* meta = leer_metadata(nombre_archivo, nombre_tag);
+        if (!meta) {
+            log_error(loggerStorage, "Metadata corrupta o faltante en %s:%s", nombre_archivo, nombre_tag);
+            continue;
+        }
+        t_tag *tag = crear_tag(nombre_tag, nombre_archivo, file->tags);
+        //t_tag *tag = malloc(sizeof(t_tag));
+        //tag->nombreTag = strdup(nombre_tag);
+        //tag->pathTag = malloc(512);
+        //sprintf(tag->pathTag, "%s/%s/%s", path_files, nombre_archivo, nombre_tag);    
+        //tag->tamanio = meta->tamanio;
+
+        //t_tag *tag = malloc(sizeof(t_tag));
+        //char *pathNuevoTag = malloc(256); 
+        //sprintf(pathNuevoTag, "%s/%s/%s", path_files, nombre_archivo, nombre_tag);
+        //tag->pathTag = pathNuevoTag;
+        //log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag);
+        //tag->nombreTag = strdup (nombre_tag);
+        log_info(loggerStorage,"Nuevo Nombre Tag = %s", tag->nombreTag);
+        tag->tamanio = meta->tamanio;
+        if (strcmp(meta->estado, "COMMITED") == 0) 
+            tag->estado = COMMITED;
+        else 
+            tag->estado = WORK_IN_PROGRESS;
+        
+        tag->physicalBlocks = list_create();
+        for(int i=0; i < list_size(meta->blocks); i++) {
+            int* ptr_meta = list_get(meta->blocks, i);
+            int* ptr_tag = malloc(sizeof(int));
+            *ptr_tag = *ptr_meta;
+            list_add(tag->physicalBlocks, ptr_tag);
+        }
+
+        tag->logBlocks = list_size(tag->physicalBlocks); 
+        //dictionary_put(file->tags,tag->nombreTag,tag);
+        log_info(loggerStorage, "  -> Recuperado Tag: %s (Size: %d, Blocks: %d)", 
+                nombre_tag, tag->tamanio, tag->logBlocks);
+
+        destruir_metadata(meta);
+    }
+    free(entrada_tag);
+    closedir(dir_tags);
+}
+
+void recargar_bitmap() {
+    char pathBitmap[256];
+    sprintf(pathBitmap, "%s/bitmap.bin", config_struct->punto_montaje);
+    
+    // MODO "r+b" (Lectura/Escritura binaria, SIN truncar/borrar)
+    FILE* archBitmap = fopen(pathBitmap, "r+b"); 
+    
+    if (!archBitmap) {
+        // Si falla (no existe), lo creamos de cero por seguridad
+        log_warning(loggerStorage, "Bitmap no encontrado en recuperación. Creando uno nuevo...");
+        crear_bitmap(); 
+        return;
+    }
+
+    int fildes = fileno(archBitmap);
+    
+    mappeo = mmap(NULL, cantBloq/8, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
+    if (mappeo == MAP_FAILED) {
+        log_info(loggerStorage, "El mapeo con el bitmap falló");
+        exit(EXIT_FAILURE);
+    }
+    
+    bitarray = bitarray_create_with_mode(mappeo, cantBloq/8, LSB_FIRST);
+    fclose(archBitmap);
+    
+    log_info(loggerStorage, "Bitmap recargado desde disco.");
 }
 
 //==========ELIMINACION Y CREACION DE ESTRUCTURAS==========
@@ -536,10 +652,9 @@ void initialFile(){
     op_write_block("initial_file","BASE", 0,escrituraInicial, 0);
     free(escrituraInicial);
     op_commit("initial_file","BASE", 0);
-    /*op_create("file2","otroTag", 0);
+    op_create("file2","otroTag", 0);
     op_truncate("initial_file","BASE", tam_bloq, 0);
-    op_tag("initial_file","BASE","file2","BASE2", 0);*/
-   
+    op_tag("initial_file","BASE","file2","BASE2", 0);
 }
 
 //==========BITMAP==========
@@ -801,40 +916,27 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
                 int *nroFis = malloc(sizeof(int));
                 *nroFis = atoi(bloqFis + 5); //bloqFis siempre sera del mismo formato "blockNRO" por lo que a partir del 6to caracter esta el nro Fisico
                 if(bloqActual != *nroFis){
-                    // Comenté esto porque estaban mal varias cosas:
-                    // 1. Marcabamos libre en bitmap sin verificar si habia otro hardlink apuntandolo
-                    // 2. list add index desplaza una posicion el bloque actual (+1). Habia que usar replace, que no desplaza, solo reeemplaza
-                    // 3. Link hardlinkea al reves los parametros, el de la izq indica al que vas a apuntar, el de la der el bloque logico
-                    // 4. Agregue mutex. El del tag quedo muy grande la SC, pero hay muchos usos intermedios.
-                    
-                    //marcar_libre_en_bitmap(bloqActual);
-                    //list_remove(tag->physicalBlocks, bloqLog);
-                    //list_add_in_index (tag->physicalBlocks, i, nroFis);
-                    //char *bloqALiberar = obtener_path_bloque_fisico(bloqActual);
-                    //char *nuevoBloq = obtener_path_bloque_fisico(nroFis);
-                    //unlink(bloqLog);
-                    //link(bloqLog,nuevoBloq);
-
-                    //Reemplaza el número de bloque en la lista
                     list_replace(tag->physicalBlocks, i, nroFis);
                     free(pbloqfis);
-                    // Reasignar hardlink
                     char*nuevoBloqPath = obtener_path_bloque_fisico(*nroFis);
-                    // Desvincular hardlink al bloque fisico anterior
                     unlink(bloqLogPath);
                     if(link(nuevoBloqPath, bloqLogPath) == -1) {
                         log_info(loggerStorage, "Fallo al crear link canónico: %s", strerror(errno));
+                        free(nuevoBloqPath);
+                    
                         return ERROR_LINK_FALLIDO;
                     }
                     log_info(loggerStorage, "##%d - %s : %s Bloque Lógico %06d se reasigna de %d a %d", query_id, nombreArch, nombreTag, i, bloqActual, *nroFis);
                     liberar_bloque_si_no_referenciado(bloqActual, query_id);
                     free(nuevoBloqPath);
                     
-                }
+                }else
+                    free(nroFis); //si son iguales liberamos la referencia dee nroFis
                 //free(bloqFis);
             }else{
                 //CASO CONTENIDO ÚNICO
                 //Para este punto conviene que ancho y pathHash sean variable Global
+
                 char Bloque[256];
                 int anchoEntrada = calcularAncho();
                 sprintf(Bloque,"block%0*d", anchoEntrada, bloqActual);
@@ -965,6 +1067,8 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 FILE *bloqL = fopen(pathBloqLog, "r+");
                 if(!bloqL){
                     log_info(loggerStorage, "Error al abrir el bloque lógico '%s' ", pathBloqLog);
+                    free(pathBloqLog);
+                    free(pathBloqFis);
                     return ERROR_NO_PUDO_ABRIR_ARCHIVO;
                 }
                 //fseek(bloqL, offset, SEEK_SET);
@@ -980,11 +1084,16 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 int *nuevoBloqFis = malloc(sizeof(int));
                 *nuevoBloqFis = buscar_bloque_libre(query_id);
                     //list_remove(tag->physicalBlocks, bloqLog);
-                list_replace(tag->physicalBlocks, nroBloque, nuevoBloqFis);
+                int* punteroBloq = list_replace(tag->physicalBlocks, nroBloque, nuevoBloqFis);
+                if (punteroBloq)
+                    free(punteroBloq);
             
-                char *pathBloqFis = obtener_path_bloque_fisico(*nuevoBloqFis);
+                char *nuevoPathBloqFis = obtener_path_bloque_fisico(*nuevoBloqFis);
                 if(link(pathBloqFis, pathBloqLog) == -1) {
                     log_info(loggerStorage, "Error en el linking");
+                    free(pathBloqLog);
+                    free(pathBloqFis);
+                    free(nuevoPathBloqFis);
                     return ERROR_LINK_FALLIDO;
                 }
                 log_info(loggerStorage, "##%d - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", query_id, nombreArch, nombreTag, nroBloque, *nuevoBloqFis);
@@ -992,6 +1101,9 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 FILE *bloqL = fopen(pathBloqLog, "r+");
                 if(!bloqL){
                     log_info(loggerStorage, "Error al abrir el bloque lógico '%s' : %s", pathBloqFis, strerror(errno));
+                    free(pathBloqLog);
+                    free(pathBloqFis);
+                    free(nuevoPathBloqFis);
                     return ERROR_NO_PUDO_ABRIR_ARCHIVO;
                 }
                 //fseek(bloqL, offset, SEEK_SET);
@@ -999,12 +1111,15 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 fclose(bloqL);
                 free(pathBloqLog);
                 free(pathBloqFis);
+                free(nuevoPathBloqFis);
                 //return RESULTADO_OK;
                 //faltan frees y falta mejor implementacion de bloques logicos
             }
             
         } else {
             log_info(loggerStorage, "File:Tag %s:%s ya está COMMITED. No hay cambios", nombreArch, nombreTag);
+            free(pathBloqLog);
+            free(pathBloqFis);
             return ERROR_ESCRITURA_NO_PERMITIDA; 
         }
     }

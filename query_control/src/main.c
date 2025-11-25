@@ -3,8 +3,6 @@
 
 int main(int argc, char* argv[]) {
     
-  
-    
     // Ejemplo de parametros hardcodeados para pruebas rapidas
     config_queryCTRL = "query.config";
     char* path_query = "ejemploQuery1";
