@@ -379,7 +379,10 @@ void inicializar_montaje(){
     cargar_config_hashIndex();
     cargar_config_superBlock();
     freshStart();
-    initialFile();
+    if(fresh_start) {
+        initialFile();
+    }
+    //initialFile();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
 }
 
@@ -715,7 +718,7 @@ t_motivo agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_b
     char *path_logical = crear_bloq_log(pathTag, meta, nro);
         if (link(path_block0, path_logical) == -1) {
             log_info(loggerStorage, "Link a block0 falló: %s", strerror(errno));
-            destruir_metadata(meta);
+            //destruir_metadata(meta);
             return ERROR_LINK_FALLIDO;
         }
     free(path_logical);
