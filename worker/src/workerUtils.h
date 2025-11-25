@@ -146,6 +146,6 @@ int seleccionar_victima(int quid);
 int seleccionar_bloque_victima();
 int reemplazo_clock_modificado();
 int reemplazo_lru();
-
+void liberar_recursos_worker();
 
 #endif

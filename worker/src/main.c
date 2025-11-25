@@ -29,6 +29,9 @@ int main(int argc, char* argv[]) {
     pthread_create(&hilo_master, NULL, iniciar_conexion_master, id);
     pthread_join(hilo_master, NULL); // join --> asegura que el programa no finalice hasta que ambos hilos terminen (o sea, hasta que Master o Storage corten la conexión)
     pthread_join(hilo_storage, NULL);
+
+    liberar_recursos_worker();
+    free(id);
     return 0;
 }
 

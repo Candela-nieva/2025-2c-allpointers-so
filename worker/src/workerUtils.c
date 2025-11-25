@@ -327,7 +327,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
         log_info(loggerWorker, "##Query %d: Fin de archivo alcanzado (EOF).", qid);
         // revisar notificar_fin_query_a_master(qid, "EOF");
     }
-    
+    if (archivos_abiertos) list_destroy_and_destroy_elements(archivos_abiertos, free);
     fclose(file);
 }
 
@@ -693,7 +693,8 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
     
     char* file_origen;
     char* tag_origen;
-    deserializar_fileTag(strdup(file_tag), &file_origen, &tag_origen);
+    char* copia_tag = strdup(file_tag);
+    deserializar_fileTag(copia_tag, &file_origen, &tag_origen);
 
     char* buffer_lectura = malloc(tam); // Buffer para almacenar los datos leídos
     int pos_buffer = 0;                 // Posición actual en el buffer de lectura
@@ -752,11 +753,12 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
     agregar_a_paquete_string(paquete, buffer_lectura, strlen(buffer_lectura));
     enviar_paquete(paquete, socket_master);
     eliminar_paquete(paquete);
-
+    free(copia_tag);
     log_info(loggerWorker, "Query %d: Accion: LEER - Direccion fisica: %d - Valor: %s",
              qid, direccion_base, buffer_lectura); // LOG OBLIGATORIO
 
     free(buffer_lectura);
+ 
     return RESULTADO_OK;
 }
 
@@ -1195,7 +1197,7 @@ t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, 
     void* direccion_fisica_destino = (char*)memoria.buffer + (num_marco * memoria.tamanio_marco);
     //memcpy(direccion_fisica_destino, buffer, memoria.tamanio_marco);
     memcpy(direccion_fisica_destino, contenido, memoria.tamanio_marco);
-
+    free(contenido);
     // Actualizamos metadatos físicos del marco (solo file_tag/pagina/ocupado)
     strcpy(destino->file_tag, file_tag);
     //memcpy(destino->file_tag, file_tag, sizeof(destino->file_tag)-1);
@@ -1378,9 +1380,23 @@ void inicializar_tablas_paginas() {
     pthread_mutex_init(&mutex_tablas_paginas, NULL);
 }
 
-void liberar_tablas_paginas() {
-    dictionary_destroy_and_destroy_elements(tablas_de_paginas, (void*)liberar_tablas_paginas);
+// Función auxiliar para liberar UNA tabla
+void liberar_elemento_tabla(void* elemento) {
+    t_tabla_paginas* tabla = (t_tabla_paginas*)elemento;
+    if(tabla->paginas) {
+        list_destroy_and_destroy_elements(tabla->paginas, free);
+    }
+    free(tabla);
 }
+
+void liberar_tablas_paginas() {
+    if(tablas_de_paginas) {
+        dictionary_destroy_and_destroy_elements(tablas_de_paginas, liberar_elemento_tabla);
+        tablas_de_paginas = NULL;
+    }
+    pthread_mutex_destroy(&mutex_tablas_paginas);
+}
+
 
 t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag) {
     t_tabla_paginas* tabla = dictionary_get(tablas_de_paginas, file_tag);
@@ -1389,7 +1405,9 @@ t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag) {
         tabla = malloc(sizeof(t_tabla_paginas));
         strcpy(tabla->file_tag, file_tag);
         tabla->paginas = list_create();
-        dictionary_put(tablas_de_paginas, strdup(file_tag), tabla);
+        char* copia = strdup(file_tag);
+        dictionary_put(tablas_de_paginas, copia, tabla);
+        free(copia);
     }
     return tabla;
 }
@@ -1440,46 +1458,27 @@ int obtener_indice_marco_de_pagina(char* file_tag, int num_pagina) {
     return pagina->marco;
 }
 
-/*
- * =========================================================================
- * FUNCIÓN PRINCIPAL DE ACCESO A MEMORIA (El "Traductor")
- * =========================================================================
- * 1. Busca la Tabla de Páginas.
- * 2. Busca la Entrada de Página (PTE).
- * 3. Si (presente == false) -> Llama a manejar_page_fault (que veremos después).
- * 4. Si (presente == true) -> Actualiza bits de uso y devuelve el marco.
- * Devuelve el NÚMERO DE MARCO o -1 si hay error.
+//HAY QUE VER SI LA DEJAMOS O NO
+void liberar_recursos_worker() {
+    // Liberar memoria interna y tablas
+    liberar_memoria_interna();
+    liberar_tablas_paginas();
 
-int traducir_direccion(char* file_tag, int num_pagina, int qid) {
-    
-    // 1. Buscar la "Tabla" (el índice) del archivo
-    t_tabla_paginas* tabla = obtener_o_crear_tabla_de_paginas(file_tag);
-
-    // 2. Buscar la "Entrada" (la fila) para esa página
-    t_pagina* pte = obtener_pte(tabla, num_pagina); // pte = Page Table Entry
-
-    // 3. Chequear el Bit de Presencia
-    if (pte->presente == false) {
-        // ¡PAGE FAULT! La página no está en RAM.
-        log_warning(loggerWorker, "Query %d: Memoria Miss - File: %s - Pagina: %d", qid, file_tag, num_pagina);
-        
-        // Llamamos al "especialista" (¡Esta es la próxima función a crear!)
-        if (!manejar_page_fault(tabla, pte, qid)) {
-            return -1; // -1 significa error
-        }
+    // Liberar commons
+    if (config != NULL) {
+        config_destroy(config);
+        config = NULL;
     }
-
-    // 4. ¡PAGE HIT! (Sea porque ya estaba, o porque el Page Fault la trajo)
+    if (loggerWorker != NULL) {
+        log_destroy(loggerWorker);
+        loggerWorker = NULL;
+    }
+    if (config_struct != NULL) {
+        free(config_struct);
+        config_struct = NULL;
+    }
     
-    // Actualizamos los bits de uso (para CLOCK/LRU)
-    pthread_mutex_lock(&memoria.mutex);
-    
-    int num_marco = pte->marco;
-    memoria.marcos[num_marco].en_uso = true;
-    memoria.marcos[num_marco].ultima_ref = time(NULL);
-    
-    pthread_mutex_unlock(&memoria.mutex);
-    
-    return num_marco;
-}
-*/
+    // Semáforos globales
+    sem_destroy(&cond_storage_ready);
+    pthread_mutex_destroy(&mutex_storage_ready);
+} 
