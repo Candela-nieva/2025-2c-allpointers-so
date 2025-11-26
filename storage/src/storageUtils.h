@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <sys/types.h>
+#include <signal.h>
 
 typedef struct {
     char* modulo;
@@ -78,7 +79,9 @@ void cargar_config();
 void crear_logger();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
 void recuperar_tags_file(char *nombre_archivo, t_fcb *file);
-void terminar_programa(int signal);
+void terminar_programa_storage(int signal);
+void destruir_fcb_item(void* elemento);
+void destruir_tag_item(void* elemento);
 //==========CONEXIONES==========
 void iniciar_servidor_multihilo(void);
 void* atender_worker(void* arg);

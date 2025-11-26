@@ -74,11 +74,39 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 	return nuevo_logger;
 }
 
-void terminar_programa(int signal) {
-    log_info(loggerStorage, "Finalizando Storage correctamente...");
-    if (configHash)
-        config destroy;
+// Liberar un TAG completo (Nombre, Path, Mutex, Lista de Bloques)
+void destruir_tag_item(void* elemento) {
+    t_tag* tag = (t_tag*)elemento;
+    if (tag) {
+        if (tag->nombreTag) free(tag->nombreTag);
+        if (tag->pathTag) free(tag->pathTag);
+        
+        // Liberar la lista de bloques físicos
+        if (tag->physicalBlocks) {
+            list_destroy_and_destroy_elements(tag->physicalBlocks, free);
+        }
+        
+        pthread_mutex_destroy(&tag->mutexTag);
+        free(tag);
+    }
+}
 
+// Liberar un FCB completo (Nombre y Diccionario de Tags)
+void destruir_fcb_item(void* elemento) {
+    t_fcb* fcb = (t_fcb*)elemento;
+    if (fcb) {
+        if (fcb->nombreArch) free(fcb->nombreArch);
+        
+        if (fcb->tags) {
+            dictionary_destroy_and_destroy_elements(fcb->tags, destruir_tag_item);
+        }
+        free(fcb);
+    }
+}
+
+void terminar_programa_storage(int signal) {
+    log_info(loggerStorage, "Finalizando Storage correctamente...");
+    if (configHash) config_destroy(configHash);
     if (config) config_destroy(config);
     if (config_SB) config_destroy(config_SB);
     if (config_struct) free(config_struct);
@@ -86,16 +114,22 @@ void terminar_programa(int signal) {
 
     if(bitarray)
         bitarray_destroy(bitarray);
-
+    if (mappeo) {
+        // Liberar la memoria mapeada
+        // Usamos cantBloq/8 porque es el tamaño en bytes
+        munmap(mappeo, cantBloq / 8); 
+    }
     if(diccionario_archivos)
-        dictionary_destroy_and_destroy_elements(diccionario_archivos, free);
+        dictionary_destroy_and_destroy_elements(diccionario_archivos, destruir_fcb_item);
 
     pthread_mutex_destroy(&mutex_bitmap);
     pthread_mutex_destroy(&mutex_hash_index);
 
-    if(loggerStorage)
-        log_destroy(loggerStorage);
+    if(loggerStorage) log_destroy(loggerStorage);
+
+    exit(0);
 }
+
 
 //==========CONEXIONES==========
 

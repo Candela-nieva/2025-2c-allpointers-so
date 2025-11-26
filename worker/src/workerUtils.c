@@ -350,16 +350,6 @@ void registrar_archivo_abierto(t_list* lista, char* file_tag) {
     }
 }
 
-
-// Función para saber si un string ya está en la lista (para no repetir)
-bool ya_esta_en_lista(t_list* lista, char* file_tag) {
-    for(int i=0; i<list_size(lista); i++) {
-        char* item = list_get(lista, i);
-        if(strcmp(item, file_tag) == 0) return true;
-    }
-    return false;       // la funcion manejar_e
-}
-
 //Devuelve 'true' si la instrucción fue END, 'false' en cualquier otro caso.
 // 
 bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* archivos_abiertos) {
