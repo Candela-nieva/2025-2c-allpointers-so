@@ -134,7 +134,7 @@ void* inicializar_servidor_multihilo(void* arg) {
 
 void* atender_conexion(void* arg){
     int fd = *(int *)arg;
-    free(arg);
+    //free(arg);
     op_code op = recibir_operacion(fd);
     switch (op) {
         case HANDSHAKE_QUERY:
@@ -152,6 +152,7 @@ void* atender_conexion(void* arg){
             break;
     }
    // close(fd);   // no cerrar fd aqui, lo mantiene QCB/WCB
+    free(arg);
     return NULL;
 }
 
@@ -249,10 +250,11 @@ void atender_Worker(int fd){
                 free(bufferMotivo);
                 log_info(loggerMaster, "WORKER ID <%d> : indico fin de query %d, motivo : %d", id_worker, wcb->qid_asig, motivoExit);
                 t_qcb *qcbExit = buscar_qcb_por_ID(wcb->qid_asig);
+                wcb->qid_asig = -1;
                 agregar_a_exit(qcbExit);
                 enviar_mensaje_exit(qcbExit->socket, motivoExit);
                 sem_post(&hay_en_Exit);
-                return;
+                break;
 
             default:
                 log_info(loggerMaster, "Operacion desconocida recibida del WORKER ID <%d> : %d", id_worker, op);
@@ -288,7 +290,8 @@ void atender_QueryControl(int fd){
     free(buffer);
 
     t_qcb* qcb = crear_query_control(path_query, prioridad, fd);
-    log_info(loggerMaster, "## Se conecta un Query Control para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>. Nivel multiprocesamiento <%d>", path_query, prioridad, qcb->qid, cant_workers);
+    int id_query = qcb->qid;
+    log_info(loggerMaster, "## Se conecta un Query Control para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>. Nivel multiprocesamiento <%d>", path_query, prioridad, id_query, cant_workers);
     agregar_a_ready(qcb);
     sem_post(&replanificar);
 
@@ -298,23 +301,23 @@ void atender_QueryControl(int fd){
             case -1:
                 switch(qcb->estado) {
                     case READY:
-                        log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado READY", qcb->qid);
+                        log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado READY", id_query);
                         //actualizar_Estado(qcb, EXIT);
                         agregar_a_exit(qcb);
                         sem_post(&hay_en_Exit);
                         return;
                     case EXEC:
-                        log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXEC", qcb->qid);
+                        log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXEC", id_query);
                         mandar_a_desalojar(qcb);
                         agregar_a_exit(qcb);
                         sem_post(&hay_en_Exit);
                         return;
                     default:
-                        log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXIT", qcb->qid);
+                        log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXIT", id_query);
                         return;
                 }
             default:
-                log_info(loggerMaster, "Operacion desconocida recibida del Query Control ID <%d>, %d", qcb->qid, op);
+                log_info(loggerMaster, "Operacion desconocida recibida del Query Control ID <%d>, %d", id_query, op);
                 return;
         }
     }
