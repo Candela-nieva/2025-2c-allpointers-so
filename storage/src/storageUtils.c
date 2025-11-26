@@ -1042,7 +1042,7 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
 char* leer_contenido_bloque(char* path_bloque_logico) {
     // Reservamos memoria para el contenido del bloque
     usleep(retardo_acceso_bloque  * 1000);
-    char* contenido = malloc(tam_bloq);
+    char* contenido = calloc(1, tam_bloq + 1);
     if (contenido == NULL) {
         log_info(loggerStorage, "Error al reservar memoria para el contenido del bloque.");
         return NULL;
@@ -1062,10 +1062,11 @@ char* leer_contenido_bloque(char* path_bloque_logico) {
     // Verificación opcional, pero puede servir si el archivo no está lleno
     if (bytes_leidos != tam_bloq) {
         log_warning(loggerStorage, "Lectura parcial. Leídos %zu de %d bytes en %s.", bytes_leidos, tam_bloq, path_bloque_logico);
-        //Lo de zu es z por el tipo de size_t y u porque es unsigned!
+        // Lo de zu es z por el tipo de size_t y u porque es unsigned!
         // Rellenamos el resto del buffer con ceros
         memset(contenido + bytes_leidos, 0, tam_bloq - bytes_leidos);
     }
+    log_info(loggerStorage, "Leimos este contenido: %s", contenido);
     return contenido;
 }
 
@@ -1117,8 +1118,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
             //buscar bloque fisico al que esta asociado el link del bloque logico
         struct stat st;
         if (stat(pathBloqFis, &st) == 0) {
-            
-            if (st.st_nlink == 2) {
+            if (st.st_nlink == 2 && bloqFis != 0) {
                 //marcar_libre_en_bitmap(bloque_fisico);
                 FILE *bloqL = fopen(pathBloqLog, "r+");
                 if(!bloqL){
@@ -1128,10 +1128,11 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                     return ERROR_NO_PUDO_ABRIR_ARCHIVO;
                 }
                 //fseek(bloqL, offset, SEEK_SET);
-                fwrite(contenido, 1, strlen(contenido), bloqL);
+                fwrite(contenido, 1, tam_bloq, bloqL);
                 fclose(bloqL);
                 free(pathBloqFis);
                 free(pathBloqLog);
+                log_info(loggerStorage, "Se escribio %s", contenido);
                 return RESULTADO_OK;
             }else{
                 unlink(pathBloqLog);

@@ -123,13 +123,14 @@ t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, 
 void* direccion_fisica_marco(int marco_id);
 
 //===================== TABLAS DE PAGINAS ===================
-t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid, t_motivo *motivo);
+void manejar_page_fault(char* file_tag, t_pagina* paginaAusente, int qid, t_motivo *motivo);
 void inicializar_tablas_paginas();
 void liberar_tablas_paginas();
 t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag);
-t_pagina* buscar_pagina(t_tabla_paginas* tabla, int num_pagina);
+t_pagina* buscar_o_crear_pagina(t_tabla_paginas* tabla, int num_pagina);
 t_marco* obtener_marco_de_pagina(char* file_tag, int num_pagina);
 int obtener_indice_marco_de_pagina(char* file_tag, int num_pagina);
+t_pagina* crearPagina(t_tabla_paginas* tabla, int num_pagina);
 
 //========== AUXILIARES PARA FLUSH ================
 bool es_mismo_archivo(void* elemento);
