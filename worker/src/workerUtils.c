@@ -187,7 +187,7 @@ void* manejar_ejecutar(void *buffer) {
     archivo[tamarch] = '\0';
     free(buffer);
     
-    log_info(loggerWorker, "##Query %d: Se recibe la Query. El path de operaciones es: %s", qid, archivo); // LOG OBLIGATORIO
+    log_info(loggerWorker, "## Query %d: Se recibe la Query. El path de operaciones es: %s", qid, archivo); // LOG OBLIGATORIO
     
     ejecutar_query(pc, archivo, qid);
     log_info(loggerWorker, "FIN DE QUERY ACTUAL");
@@ -272,7 +272,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
         
         trim_newline(linea);
 
-        log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea); // fetch de la linea
+        log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea); // fetch de la linea LOG OBLIGATORIO
         
         es_end = ejecutar_instruccion(linea, qid, pc, archivos_abiertos);
         
@@ -447,7 +447,7 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
         fue_end = true; // Debemos terminar la query por el error
     } else {
         if(!fue_end)
-            log_info(loggerWorker, "## Query %d: Instrucción realizada: %s", qid, instruccion_log);
+            log_info(loggerWorker, "## Query %d: Instrucción realizada: %s", qid, instruccion_log); // LOG OBLIGATORIO
     }       // LOG OBLIGATORIO: Instrucción realizada
     free(copia);
     return fue_end;
@@ -581,6 +581,11 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     log_info(loggerWorker, "Query %d: Page Fault en %s página %d", qid, file_tag, pagina_logica);
     //posible semafoso lock
 
+    char* file_origen;
+    char* tag_origen;
+    char* copia_tag = strdup(file_tag);
+    deserializar_fileTag(copia_tag, &file_origen, &tag_origen);
+    
     int indice_marco_victima = seleccionar_victima(qid);
 
     t_marco* marco_victima = &memoria.marcos[indice_marco_victima];  
@@ -642,9 +647,12 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     nueva->modificado = false;
     nueva->uso = true;
     nueva->ultima_ref = time(NULL);
-    log_info(loggerWorker, "Query %d: Se asigna el Marco: %d a la Página: %d", qid, indice_marco_victima, pagina_logica);
+    log_info(loggerWorker, "Query %d: Se asigna el Marco: %d a la Página: %d perteneciente al - File: %s - Tag: %s", qid, indice_marco_victima, pagina_logica, file_origen, tag_origen); // LOG OBLIGATORIO
     log_info(loggerWorker, "Query %d: Memoria Add - File: %s - Pagina: %d Marco: %d", qid, file_tag, pagina_logica, indice_marco_victima);
-
+    
+    free(copia_tag);
+    
+    
     //pthread_mutex_unlock(&memoria.mutex);
     return nueva;
 }
@@ -1248,9 +1256,9 @@ int reemplazo_clock_modificado(int qid) {
             if (pte) { uso = pte->uso; mod = pte->modificado; }
             else { uso = false; mod = false; }
 
-            // Si PTE existe y PTE->uso == true, podemos ponerlo a false (solo en la 1ª pasada)
+            // Si PTE existe y PTE->uso == true, podemos ponerlo a false (solo en la 2da pasada) (en vueltas 1)
             if (pte && pte->uso) {
-                if (vueltas == 0) {
+                if (vueltas == 1) {
                     pte->uso = false; // "bajamos" el bit U
                 }
             }

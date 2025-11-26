@@ -151,7 +151,6 @@ void* atender_conexion(void* arg){
             close(fd); // NUEVO: cerrar el socket en caso de handshake inválido
             break;
     }
-   // close(fd);   // no cerrar fd aqui, lo mantiene QCB/WCB
     free(arg);
     return NULL;
 }
@@ -181,22 +180,22 @@ void atender_Worker(int fd){
             //case EXIT_QUERY:
             case -1:
                 log_info(loggerMaster, "DESCONEXION del WORKER <%d>", id_worker);
-                pthread_mutex_lock(&cant_workers);
-                -- cant_workers;
-                pthread_mutex_unlock(&cant_workers);
+                pthread_mutex_lock(&mutex_cant_workers);
+                --cant_workers;
+                pthread_mutex_unlock(&mutex_cant_workers);
+                log_info(loggerMaster, "Saque cant workers, ahora son %d", cant_workers);
                 if(wcb->qid_asig >= 0){
                     //podria traer errores si al wcb le quedo el qid de una query que termino REVISAR
                     log_info(loggerMaster, "Mato la query ejecutando en worker, QUERY <%d>", wcb->qid_asig);
                     t_qcb *aDesalojar = buscar_qcb_por_ID(wcb->qid_asig);
                     enviar_mensaje_exit(aDesalojar->socket, DESCONEXION_WORKER);
+                    remover_qcb_cola(wcb->qid_asig,cola_exec,mutex_cola_exec);
                     agregar_a_exit(aDesalojar);
                     sem_post(&hay_en_Exit);
-                    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    // COMENTARIO DANTE: Habría que eliminar tmb al wcb de la lista de wcbs y su estructura
-                    // hacerle el free para que deje de ocupar memoria. Fijarse eso en memory leaks despues
-                    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 }
+                log_info(loggerMaster, "Antes de eliminar wcb, im not a genius");
                 eliminar_wcb(wcb);
+                log_info(loggerMaster, "Pase eliminar wcb, im a genius");
                 return;
             case MASTER_TO_QC_READ_RESULT:
                 log_info(loggerMaster, "WORKER <%d>, Envia resultado de read a Query %d ", id_worker, wcb->qid_asig);
@@ -250,10 +249,19 @@ void atender_Worker(int fd){
                 free(bufferMotivo);
                 log_info(loggerMaster, "WORKER ID <%d> : indico fin de query %d, motivo : %d", id_worker, wcb->qid_asig, motivoExit);
                 t_qcb *qcbExit = buscar_qcb_por_ID(wcb->qid_asig);
+                remover_qcb_cola(wcb->qid_asig,cola_exec,mutex_cola_exec);
+                pthread_mutex_lock(&wcb->mutex_wcb);
                 wcb->qid_asig = -1;
+                wcb->esta_libre = true;
+                pthread_mutex_unlock(&wcb->mutex_wcb);
                 agregar_a_exit(qcbExit);
                 enviar_mensaje_exit(qcbExit->socket, motivoExit);
                 sem_post(&hay_en_Exit);
+                if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
+                    sem_post(&hay_worker_libre);
+                }else{
+                    sem_post(&replanificar);
+                }
                 break;
 
             default:
@@ -303,11 +311,13 @@ void atender_QueryControl(int fd){
                     case READY:
                         log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado READY", id_query);
                         //actualizar_Estado(qcb, EXIT);
+                        remover_qcb_cola(qcb->qid,cola_ready,mutex_cola_ready);
                         agregar_a_exit(qcb);
                         sem_post(&hay_en_Exit);
                         return;
                     case EXEC:
                         log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXEC", id_query);
+                        remover_qcb_cola(qcb->qid,cola_exec,mutex_cola_exec);
                         mandar_a_desalojar(qcb);
                         agregar_a_exit(qcb);
                         sem_post(&hay_en_Exit);
@@ -384,7 +394,7 @@ t_qcb* crear_query_control(char* path, int prioridad, int fd){
     sprintf(key, "%d",qcb->qid);
     log_info(loggerMaster, "SE GUARDO LA LLAVE %s",key);
     pthread_mutex_lock(&mutex_diccionario_qcb);
-    dictionary_put(diccionario_qcb, strdup(key), qcb);
+    dictionary_put(diccionario_qcb, (key), qcb);
     pthread_mutex_unlock(&mutex_diccionario_qcb);
     free(key);
     return qcb;
@@ -543,7 +553,14 @@ t_wcb* buscar_wcb_menor_prio() {
 }
 
 void eliminar_wcb(t_wcb *aEliminar){
-    list_remove_element(lista_workers,aEliminar);
+    //list_remove_element(lista_workers,aEliminar);
+    log_info(loggerMaster,"dentro");
+    if(list_remove_element(lista_workers,aEliminar)){
+        log_info(loggerMaster, "Se removio el wcb");
+    } else {
+        log_info(loggerMaster, "No se pudo remover el wcb");
+    }
+    log_info(loggerMaster,"afuera");
     close(aEliminar->socket);
     free(aEliminar);
 }
@@ -556,9 +573,6 @@ void* planificar_exit(void *arg){
         sem_wait(&hay_en_Exit);
         t_qcb *qcb_elim = list_remove(cola_exit,0);
         log_info(loggerMaster, "Query en Exit - ID asignado <%d>",qcb_elim->qid);
-        //t_paquete* paquete = crear_paquete(MASTER_TO_QC_END);
-        //enviar_paquete(paquete, qcb_elim->socket);
-        //eliminar_paquete(paquete);
         eliminar_qcb_diccionario(qcb_elim->qid);
     }
     return NULL;
@@ -576,20 +590,25 @@ void* inicializar_planificador(void* arg){
 
 void planificador_fifo(){
     //es mejor hacerlo con while true y semaforos o llamar la funcion cada vez que tenga que replanificar?
-    log_info(loggerMaster,"TAMAÑO INICIAL DE LISTA %d", list_size(cola_ready));
-    for(int i = 0; i < list_size(cola_ready);i++){
-        t_qcb *q = list_get(cola_ready,0);
-        log_info(loggerMaster,"id %d", q->qid);
-    }
     while(true){
         sem_wait(&replanificar);
         log_info(loggerMaster, "Hay proceso en READY");
         sem_wait(&hay_worker_libre);
-        t_qcb* qcb_exec = list_remove(cola_ready,0); // no sería list_remove? y tene un mutex protegiendo la cola
+        if(list_is_empty(cola_ready)){
+            sem_post(&hay_worker_libre);
+            continue;
+        }
+        t_qcb* qcb_exec = list_get(cola_ready,0); // no sería list_remove? y tene un mutex protegiendo la cola
         log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
         t_wcb* wcb_elegido = buscar_worker_libre();
-        agregar_a_exec(qcb_exec);
-        mandar_a_ejecutar(qcb_exec, wcb_elegido);
+        if(wcb_elegido){
+            list_remove(cola_ready,0);
+            agregar_a_exec(qcb_exec);
+            mandar_a_ejecutar(qcb_exec, wcb_elegido);
+        }else{
+            sem_post(&replanificar);
+            continue;
+        }
     }
 }
 

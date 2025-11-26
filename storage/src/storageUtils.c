@@ -1290,11 +1290,7 @@ void eliminarStructTag(char* nombreArch, char *nombreTag){
     t_tag *tag = dictionary_remove(fcb->tags,nombreTag);
     if(tag != NULL) {
         log_info(loggerStorage, "Se eliminara %s:%s", nombreArch, tag->nombreTag);
-        free(tag->nombreTag);
-        free(tag->pathTag);
-        pthread_mutex_destroy(&tag->mutexTag);
-        list_destroy_and_destroy_elements(tag->physicalBlocks, free);
-        free(tag);
+        destruir_tag_item(tag);
     }
 }
 
@@ -1365,8 +1361,6 @@ void destruir_metadata(t_metadata* meta) {
     }
     if (meta->blocks) {
         list_destroy_and_destroy_elements(meta->blocks, free);
-       
-    
     }
     free(meta);
 }
