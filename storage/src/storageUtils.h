@@ -71,6 +71,7 @@ extern t_config* config;
 extern t_config* config_SB;
 extern t_config_storage* config_struct; 
 extern t_config_superblock* config_superBlock;
+extern t_config* configHash;
 extern char* config_storage;
 extern t_dictionary* diccionario_qcb;
 //==========INICIALIZACION==========

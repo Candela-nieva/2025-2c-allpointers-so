@@ -559,9 +559,7 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
         pthread_mutex_lock(&memoria.mutex);
         memcpy(direccion_destino, ptr_contenido, a_escribir);
         if (a_escribir < espacio_en_pagina) {
-            void* inicio_resto = (char*)direccion_destino + a_escribir;
-            int cantidad_limpiar = espacio_en_pagina - a_escribir;
-            memset(inicio_resto, 0, cantidad_limpiar);
+            memset((char*)direccion_destino + a_escribir, 0, espacio_en_pagina - a_escribir);
         }
         pthread_mutex_unlock(&memoria.mutex);
 
@@ -1311,7 +1309,8 @@ int reemplazo_clock_modificado(int qid) {
         if (memoria.puntero_clock == inicio) {
   
             vueltas++;
-        }// 
+        }
+        //if (vueltas >= 4) break;
         //if (vueltas > 1) break; // si no encontro nada en dos vueltas
     }
 

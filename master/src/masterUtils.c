@@ -626,7 +626,6 @@ void planificador_prioridades(){
             log_info(loggerMaster, "SALI DE LA FUNCION");
             if(cant_workers > 0)
             {
-                
                 //t_wcb* wcb_elegido = buscar_wcb_menor_prio();
                 log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qcb_exec->qid);
                 t_wcb* wcb_elegido = buscar_worker_libre();

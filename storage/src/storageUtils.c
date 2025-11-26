@@ -447,6 +447,9 @@ void inicializar_semaforos() {
 }
 
 void cargar_config_hashIndex(){
+    if (configHash != NULL) {
+        config_destroy(configHash); // Liberar si ya existía
+    }
     char path_blocks_hash[256];
     sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
     configHash = config_create(path_blocks_hash);
@@ -682,6 +685,9 @@ void crear_physical_blocks() {
     int anchoEntrada = calcularAncho();
     char nombreArch[512];
     char nroBloque[32];
+
+    void* buffer_vacio = calloc(1, tam_bloq);
+
     for(int i=0; i < cantBloq; i++){
         sprintf(nroBloque,"%0*d", anchoEntrada, i);
         sprintf(nombreArch, "%s/block%s.dat", path_blocks, nroBloque);
@@ -689,27 +695,27 @@ void crear_physical_blocks() {
         FILE *archBloque = fopen(nombreArch, "w+");
         if (!archBloque) {
             log_error(loggerStorage, "Error al crear '%s': %s", nombreArch, strerror(errno));
+            free(buffer_vacio);
             exit(EXIT_FAILURE);
         }
-        ftruncate(fileno(archBloque), tam_bloq);
-        if(!archBloque) {
-            log_error(loggerStorage, "Error al crear el archivo de bloque '%s' : %s", nombreArch, strerror(errno));
-            exit(EXIT_FAILURE);
-        }
+        fwrite(buffer_vacio, 1, tam_bloq, archBloque);
+        //ftruncate(fileno(archBloque), tam_bloq);
         fclose(archBloque);
     }
+    free(buffer_vacio);
 }
 
 void initialFile(){
     op_create("initial_file","BASE", 0);
     op_truncate("initial_file","BASE", tam_bloq, 0);
-    char escrituraInicial[tam_bloq + 1];
-    memset(escrituraInicial, '0', (tam_bloq));
-    escrituraInicial[tam_bloq] = '\0';
-    op_write_block("initial_file","BASE", 0,escrituraInicial, 0);
-    char *contALeer;
-    op_read_block("initial_file","BASE", 0,&contALeer, 0);
-    free(contALeer);
+    op_commit("initial_file", "BASE", 0);
+    //char escrituraInicial[tam_bloq + 1];
+    //memset(escrituraInicial, '0', (tam_bloq));
+    //escrituraInicial[tam_bloq] = '\0';
+    //op_write_block("initial_file","BASE", 0,escrituraInicial, 0);
+    //char *contALeer;
+    //op_read_block("initial_file","BASE", 0,&contALeer, 0);
+    //free(contALeer);
 }
 
 //==========BITMAP==========
@@ -1146,7 +1152,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                     free(punteroBloq);
             
                 char *nuevoPathBloqFis = obtener_path_bloque_fisico(*nuevoBloqFis);
-                if(link(pathBloqFis, pathBloqLog) == -1) {
+                if(link(nuevoPathBloqFis, pathBloqLog) == -1) {
                     log_info(loggerStorage, "Error en el linking");
                     free(pathBloqLog);
                     free(pathBloqFis);
@@ -1164,7 +1170,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                     return ERROR_NO_PUDO_ABRIR_ARCHIVO;
                 }
                 //fseek(bloqL, offset, SEEK_SET);
-                fwrite(contenido, 1, strlen(contenido), bloqL);
+                fwrite(contenido, 1, tam_bloq, bloqL);
                 fclose(bloqL);
                 free(pathBloqLog);
                 free(pathBloqFis);
