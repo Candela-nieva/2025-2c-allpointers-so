@@ -358,7 +358,7 @@ void atenderRead(int fd_conexion, void* buffer){
     int QID, nroBloq;
     char *nombreArch;
     char *nombreTag; 
-    char *contenido;
+    char *contenido=NULL;
 
     int offset = recibir_QID_nombreArch_nombreTag(buffer,&QID, &nombreArch, &nombreTag);
     memcpy(&nroBloq,buffer + offset, sizeof(int));
@@ -780,10 +780,10 @@ char *obtener_path_bloq_logico(t_tag *tag, int nroBloqLog){
 }
 
 char* crear_bloq_log(char* pathTag, t_metadata *meta,int nro){
-    /*int* cero = malloc(sizeof(int));
+    int* cero = malloc(sizeof(int));
     *cero = 0;
-    list_add(meta->blocks, cero);*/
-    list_add(meta->blocks, 0);
+    list_add(meta->blocks, cero);
+    //list_add(meta->blocks, 0);
     char nombreBloq[32];
     sprintf(nombreBloq, "%06d.dat", nro);
 
@@ -878,7 +878,7 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
 
     tag->tamanio = nuevoTamanio;
     meta->tamanio = nuevoTamanio;
-    //guardar_metadata(meta, nombreArch, nombreTag);
+    guardar_metadata(meta, nombreArch, nombreTag);
     //esto se tiene que hacer recien en commit ??????????????????????
     log_info(loggerStorage, "##%d - File Truncado %s:%s - Tamaño: %d", query_id, nombreArch, nombreTag, nuevoTamanio);
     destruir_metadata(meta);

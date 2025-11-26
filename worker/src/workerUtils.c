@@ -611,6 +611,7 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
                 }
             }
             pagina_victima->modificado = false;
+            pagina_victima->presente=false;
         }
         pthread_mutex_unlock(&mutex_tablas_paginas);
     }
