@@ -188,27 +188,6 @@ void* manejar_ejecutar(void *buffer) {
     free(buffer);
     
     log_info(loggerWorker, "##Query %d: Se recibe la Query. El path de operaciones es: %s", qid, archivo); // LOG OBLIGATORIO
-    //log_info(loggerWorker, "Manejando EJECUTAR: PC=%d, Archivo=%s", pc, archivo);
-    //intento implementar cheque de interrupt
-    //NUEVO!!!!!
-    /*while(true){
-        log_info(loggerWorker, "EJECUTANDO....EJECUTANDO....");
-        usleep(3000000);
-        ++pc;
-        log_info(loggerWorker, "PC actualizado a %d.", pc);
-        log_info(loggerWorker, "Chequeo Interrupcion");
-        if(atomic_load(&hay_interrupt) == 1){
-            atomic_store(&hay_interrupt,0);
-            log_info(loggerWorker, "EL QUERY FUE DESALOJADO CON EXITO");
-            t_paquete *paquete = crear_paquete(PC_ACTUALIZADO);
-            agregar_a_paquete(paquete,&pc,sizeof(int));
-            enviar_paquete(paquete,socket_master);
-            eliminar_paquete(paquete);
-            log_info(loggerWorker, "PC %d enviado a master.", pc);
-            break;
-        }
-
-    }*/
     
     ejecutar_query(pc, archivo, qid);
     log_info(loggerWorker, "FIN DE QUERY ACTUAL");
@@ -228,6 +207,17 @@ void notificar_fin_query_a_master(int qid, int motivo_op_code) {
     eliminar_paquete(p);
 }
 
+// Limpia las líneas leídas de archivos para que no tengan saltos de línea al final, 
+// y así procesarlas correctamente en el query interpreter.
+void trim_newline(char* s) {
+    if(!s) return;
+    size_t len = strlen(s);
+    while(len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) {
+        s[len - 1] = '\0';
+        len--;
+    }
+}
+
 // Ejecuta las instrucciones de un archivo de query desde una línea específica (pc_inicial)
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
 
@@ -240,6 +230,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
 
     //Construir la ruta completa al archivo de query (PATH_SCRIPTS + "/" + archivo_relativo)
     char ruta_completa[1024];
+    
     if (config_struct && config_struct->path_scripts) {
         snprintf(ruta_completa, sizeof(ruta_completa), "%s/%s", config_struct->path_scripts, archivo_relativo);
     } else {
@@ -331,6 +322,20 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     fclose(file);
 }
 
+// Para mapear las instrucciones
+tipo_instruccion obtener_instruccion(const char* op) {
+    if (strcmp(op, "CREATE") == 0) return CREATE;
+    if (strcmp(op, "TRUNCATE") == 0) return TRUNCATE;
+    if (strcmp(op, "WRITE") == 0) return WRITE;
+    if (strcmp(op, "READ") == 0) return READ;
+    if (strcmp(op, "TAG") == 0) return TAG;
+    if (strcmp(op, "COMMIT") == 0) return COMMIT;
+    if (strcmp(op, "FLUSH") == 0) return FLUSH;
+    if (strcmp(op, "DELETE") == 0) return DELETE;
+    if (strcmp(op, "END") == 0) return END;
+    return DESCONOCIDA;
+}
+
 void registrar_archivo_abierto(t_list* lista, char* file_tag) {
     if (!lista || !file_tag) return;
 
@@ -346,18 +351,6 @@ void registrar_archivo_abierto(t_list* lista, char* file_tag) {
 }
 
 
-
-// Limpia las líneas leídas de archivos para que no tengan saltos de línea al final, 
-// y así procesarlas correctamente en el query interpreter.
-void trim_newline(char* s) {
-    if(!s) return;
-    size_t len = strlen(s);
-    while(len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) {
-        s[len - 1] = '\0';
-        len--;
-    }
-}
-
 // Función para saber si un string ya está en la lista (para no repetir)
 bool ya_esta_en_lista(t_list* lista, char* file_tag) {
     for(int i=0; i<list_size(lista); i++) {
@@ -365,19 +358,6 @@ bool ya_esta_en_lista(t_list* lista, char* file_tag) {
         if(strcmp(item, file_tag) == 0) return true;
     }
     return false;       // la funcion manejar_e
-}
-// Para mapear las instrucciones
-tipo_instruccion obtener_instruccion(const char* op) {
-    if (strcmp(op, "CREATE") == 0) return CREATE;
-    if (strcmp(op, "TRUNCATE") == 0) return TRUNCATE;
-    if (strcmp(op, "WRITE") == 0) return WRITE;
-    if (strcmp(op, "READ") == 0) return READ;
-    if (strcmp(op, "TAG") == 0) return TAG;
-    if (strcmp(op, "COMMIT") == 0) return COMMIT;
-    if (strcmp(op, "FLUSH") == 0) return FLUSH;
-    if (strcmp(op, "DELETE") == 0) return DELETE;
-    if (strcmp(op, "END") == 0) return END;
-    return DESCONOCIDA;
 }
 
 //Devuelve 'true' si la instrucción fue END, 'false' en cualquier otro caso.
@@ -497,8 +477,6 @@ t_motivo ejecutar_create(char* file_tag, int qid){
     agregar_a_paquete(paquete, &qid, sizeof(int));
     agregar_a_paquete_string(paquete, file_origen, strlen(file_origen));
     agregar_a_paquete_string(paquete,tag_origen,strlen(tag_origen));
-    //int tamanio = 0;
-    //agregar_a_paquete(paquete, &tamanio, sizeof(int));
     log_info(loggerWorker,"Se envia a Storage el CODOP %d , Qid %d , file : %s , tag : %s", CREATE_FILE, qid, file_origen, tag_origen);
     enviar_paquete(paquete, socket_storage);
     log_info(loggerWorker,"ENVIADO A STORAGE");
@@ -549,13 +527,8 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
     int pagina_logica = direccion_base / tam_pagina;
     int offset = direccion_base % tam_pagina;
     int bytes_restantes = strlen(contenido);
-    //int pos_buffer = 0; // posición dentro de 'contenido'
     
     char* ptr_contenido = contenido; // puntero para recorrer el contenido a escribir (avanza a medida que voy escribiendo)
-    
-    /*char* file_origen;
-    char* tag_origen ;
-    deserializar_fileTag(strdup(file_tag), file_origen, tag_origen);;*/
 
     t_tabla_paginas* tabla = obtener_o_crear_tabla_paginas(tag);
     
@@ -701,7 +674,6 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
 
     while(bytes_restantes > 0) {
         // 1) Buscar el marco asociado a la página
-        //int marco = obtener_marco_de_pagina(file_tag, pagina_inicial);
         int indice_marco = obtener_indice_marco_de_pagina(file_tag, pagina_inicial);
 
         // 2) ¿Page fault?

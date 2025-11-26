@@ -74,6 +74,29 @@ t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnC
 	return nuevo_logger;
 }
 
+void terminar_programa(int signal) {
+    log_info(loggerStorage, "Finalizando Storage correctamente...");
+    if (configHash)
+        config destroy;
+
+    if (config) config_destroy(config);
+    if (config_SB) config_destroy(config_SB);
+    if (config_struct) free(config_struct);
+    if (config_superBlock) free(config_superBlock);
+
+    if(bitarray)
+        bitarray_destroy(bitarray);
+
+    if(diccionario_archivos)
+        dictionary_destroy_and_destroy_elements(diccionario_archivos, free);
+
+    pthread_mutex_destroy(&mutex_bitmap);
+    pthread_mutex_destroy(&mutex_hash_index);
+
+    if(loggerStorage)
+        log_destroy(loggerStorage);
+}
+
 //==========CONEXIONES==========
 
 t_worker *registrarWorker(int fd_conexion, int idWorker){
@@ -135,7 +158,7 @@ void* atender_worker(void* arg){
         log_info(loggerStorage, "##Se escuchan peticiones de Worker %d", worker->ID_Worker);
         op_storage inst = recibir_operacion(worker->socket);
         log_info(loggerStorage, "##Instruccion recibida %d", inst);
-        if(inst < 0) {
+        if(inst == -1) {
             cant_workers--;
             log_info(loggerStorage, "##Se desconecta el Worker %d - Cantidad de Workers: %d", worker->ID_Worker, cant_workers);
             darDeBajaWorker(worker);
@@ -310,7 +333,7 @@ void atenderRead(int fd_conexion, void* buffer){
     t_motivo resultado = op_read_block(nombreArch, nombreTag, nroBloq,&contenido,QID);
     t_paquete *paquete = crear_paquete(resultado);
     if(resultado == RESULTADO_OK) {
-        agregar_a_paquete_string(paquete, contenido, strlen(contenido));
+        agregar_a_paquete_string(paquete, contenido, tam_bloq);
         enviar_paquete(paquete, fd_conexion);
         eliminar_paquete(paquete);
     } else {
@@ -393,6 +416,7 @@ void cargar_config_hashIndex(){
     char path_blocks_hash[256];
     sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
     configHash = config_create(path_blocks_hash);
+    
 }
 
 void cargar_config_superBlock(){
@@ -650,15 +674,9 @@ void initialFile(){
     memset(escrituraInicial, '0', (tam_bloq));
     escrituraInicial[tam_bloq] = '\0';
     op_write_block("initial_file","BASE", 0,escrituraInicial, 0);
-    //free(escrituraInicial);
     char *contALeer;
     op_read_block("initial_file","BASE", 0,&contALeer, 0);
-    //log_info(loggerStorage,"se Leyo : %s", contALeer);
     free(contALeer);
-    /*op_commit("initial_file","BASE", 0);
-    op_create("file2","otroTag", 0);
-    op_truncate("initial_file","BASE", tam_bloq, 0);
-    op_tag("initial_file","BASE","file2","BASE2", 0);*/
 }
 
 //==========BITMAP==========

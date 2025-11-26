@@ -225,7 +225,7 @@ void atender_Worker(int fd){
                 
                 memcpy(contenido, buffer + offset,tamCont);
                 contenido[tamCont] = '\0';
-
+                free(buffer);
                 t_qcb *qcb = buscar_qcb_por_ID(wcb->qid_asig);
                 t_paquete *paquete = crear_paquete(MASTER_TO_QC_READ_RESULT);
                 agregar_a_paquete_string(paquete,arch, strlen(arch));
@@ -249,8 +249,8 @@ void atender_Worker(int fd){
                 free(bufferMotivo);
                 log_info(loggerMaster, "WORKER ID <%d> : indico fin de query %d, motivo : %d", id_worker, wcb->qid_asig, motivoExit);
                 t_qcb *qcbExit = buscar_qcb_por_ID(wcb->qid_asig);
-                enviar_mensaje_exit(qcbExit->socket, motivoExit);
                 agregar_a_exit(qcbExit);
+                enviar_mensaje_exit(qcbExit->socket, motivoExit);
                 sem_post(&hay_en_Exit);
                 return;
 
@@ -394,7 +394,6 @@ void actualizar_Estado(t_qcb* qcb, t_estado nuevo_estado){
     pthread_mutex_unlock(&(qcb->mutex_qcb));
     log_info(loggerMaster, "Query ID <%d> cambio de estado de <%d> a <%d>", qcb->qid, estado_anterior, nuevo_estado);
 }
-
 
 t_qcb* buscar_qcb_por_ID(int qid){
     char *key = malloc(sizeof(int)); //eso no seria muy chico?

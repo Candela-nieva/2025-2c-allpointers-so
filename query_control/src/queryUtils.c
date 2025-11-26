@@ -123,6 +123,7 @@ void recibir_mensaje_exit(int socket_master){
     log_info(loggerQueryCTRL, "## Query Finalizada - %s", string_motivo);
 
     // Cerrar la conexión y terminar el Query Control
+    free(bufferMotivo);
     close(socket_master);
 }
 

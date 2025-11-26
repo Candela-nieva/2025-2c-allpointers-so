@@ -78,6 +78,7 @@ void cargar_config();
 void crear_logger();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
 void recuperar_tags_file(char *nombre_archivo, t_fcb *file);
+void terminar_programa(int signal);
 //==========CONEXIONES==========
 void iniciar_servidor_multihilo(void);
 void* atender_worker(void* arg);

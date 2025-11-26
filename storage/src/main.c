@@ -3,6 +3,7 @@
 int main(int argc, char* argv[]) {
     saludar("storage");
     config_storage = "storage.config";
+    signal(SIGINT, terminar_programa);
 
     inicializar_config();
     cargar_config();

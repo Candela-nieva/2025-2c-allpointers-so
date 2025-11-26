@@ -44,12 +44,7 @@ typedef enum {
 // ============== Memoria Interna ================
 typedef struct {
     char file_tag[128];      // nombre del file:tag que ocupa este marco (cadena vacia si esta libre)
-    //int marco_id;          // ID del marco dentro del file:tag
     int pagina_logica;      
-    //bool modificado;       // indica si el marco ha sido modificado (1) o no (0) (dirty bit)
-    //bool en_uso;           // indica si el marco está en uso (1) o libre (0) (para CLOCK)
-    //time_t ultima_ref;     // timestamp de la última referencia (para LRU)
-    //void* datos;           // puntero a los datos del bloque // CREO QUE NO VA
     bool ocupado;            // indica si el marco está ocupado (1) o libre (0)
 } t_marco;
 
@@ -78,7 +73,6 @@ typedef struct {
 typedef struct {
     char file_tag[128];     // identificador del file:tag
     t_list* paginas;        // lista de t_pagina* (commons/list.h)
-    //int cant_paginas;
 } t_tabla_paginas;
 
 
@@ -98,22 +92,18 @@ void cargar_config ();
 t_log* iniciar_logger(char* nombreArchivoLog, char* nombreLog, bool seMuestraEnConsola, t_log_level nivelDetalle);
 void* iniciar_conexion_storage(void* arg);
 void* iniciar_conexion_master(void* arg);
+void inicializar_memoria_interna();
 
 void esperar_queries();
 void *manejar_ejecutar(void* buffer);
-void trim_newline(char* s);
-
-bool es_mismo_archivo(void* elemento);
-void registrar_archivo_abierto(t_list* lista, char* file_tag);
-
-t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid, t_motivo *motivo);
-
-void inicializar_memoria_interna();
-void manejar_errores(t_motivo motivo, int qid);
-void deserializar_fileTag(char* fileTag, char **file, char **tag);
 void notificar_fin_query_a_master(int qid, int motivo_op_code);
 
+void manejar_errores(t_motivo motivo, int qid);
+void deserializar_fileTag(char* fileTag, char **file, char **tag);
+
+
 //============= EJECUTAR INSTRUCCIONES ==============
+void trim_newline(char* s);
 bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* archivos_abiertos);
 void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid);
 tipo_instruccion obtener_instruccion(const char* op);
@@ -131,6 +121,9 @@ t_motivo ejecutar_flush(char* file_tag, int qid);
 t_motivo enviar_bloque_a_storage(int qid, char* file_tag, int nro_pagina_logica, void* contenido);
 t_motivo solicitar_bloque_a_storage(int qid, char* file_tag, int pagina_logica, t_marco* destino);
 void* direccion_fisica_marco(int marco_id);
+
+//===================== TABLAS DE PAGINAS ===================
+t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas* tabla, int qid, t_motivo *motivo);
 void inicializar_tablas_paginas();
 void liberar_tablas_paginas();
 t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag);
@@ -139,7 +132,8 @@ t_marco* obtener_marco_de_pagina(char* file_tag, int num_pagina);
 int obtener_indice_marco_de_pagina(char* file_tag, int num_pagina);
 
 //========== AUXILIARES PARA FLUSH ================
-
+bool es_mismo_archivo(void* elemento);
+void registrar_archivo_abierto(t_list* lista, char* file_tag);
 
 //============= ALGORITMOS DE REEMPLAZO
 int seleccionar_victima(int quid);
