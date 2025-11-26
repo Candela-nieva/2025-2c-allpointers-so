@@ -580,13 +580,15 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     
     log_info(loggerWorker, "Query %d: Page Fault en %s página %d", qid, file_tag, pagina_logica);
     //posible semafoso lock
-
+    
     char* file_origen;
     char* tag_origen;
     char* copia_tag = strdup(file_tag);
     deserializar_fileTag(copia_tag, &file_origen, &tag_origen);
     
+    log_info(loggerWorker, "AVANZANDO1");
     int indice_marco_victima = seleccionar_victima(qid);
+    log_info(loggerWorker, "PASE LA VICTIMA");
 
     t_marco* marco_victima = &memoria.marcos[indice_marco_victima];  
 
@@ -594,8 +596,10 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
         char* file_tag_victima = marco_victima->file_tag;
         int num_pagina_victima = marco_victima->pagina_logica;
         // Buscar su tabla y entrada de página Seleccionar Marco Víctima (Bloqueamos RAM Física) pthread_mutex_lock(&memoria.mutex);
+        log_info(loggerWorker, "AVANZANDO2");
         pthread_mutex_lock(&mutex_tablas_paginas);
         t_tabla_paginas* tabla_victima = dictionary_get(tablas_de_paginas, file_tag_victima);
+        log_info(loggerWorker, "AVANZANDO3");
         t_pagina* pagina_victima = buscar_pagina(tabla_victima, num_pagina_victima);
 
         if(pagina_victima) {
@@ -607,7 +611,7 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
                 void* contenido_victima = memoria.buffer + (indice_marco_victima * memoria.tamanio_marco);
                 //void* buffer_temporal = malloc(tamanio_bloque_storage); // esto se usa aca?
                 //memcpy(buffer_temporal, contenido_victima, tamanio_bloque_storage); // esto se usa aca?
-                
+                log_info(loggerWorker, "AVANZANDO4");
                 *motivo = enviar_bloque_a_storage(qid, file_tag_victima, marco_victima->pagina_logica, contenido_victima);
                 if (*motivo != RESULTADO_OK) {
                     log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, *motivo);
@@ -618,6 +622,7 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
             pagina_victima->modificado = false;
             pagina_victima->presente=false;
         }
+        log_info(loggerWorker, "AVANZANDO5");
         pthread_mutex_unlock(&mutex_tablas_paginas);
     }
 
@@ -651,8 +656,6 @@ t_pagina* manejar_page_fault(char* file_tag, int pagina_logica, t_tabla_paginas*
     log_info(loggerWorker, "Query %d: Memoria Add - File: %s - Pagina: %d Marco: %d", qid, file_tag, pagina_logica, indice_marco_victima);
     
     free(copia_tag);
-    
-    
     //pthread_mutex_unlock(&memoria.mutex);
     return nueva;
 }
@@ -1082,7 +1085,6 @@ void* direccion_fisica_marco(int marco_id) {
 // Objetivo --> elegir el indice del marco fisico donde se va a cargar la pagina solicitada
 int seleccionar_victima(int qid) {
     pthread_mutex_lock(&memoria.mutex);
-
     // 1ero: Busco marcos libres 
     for(int i = 0; i < memoria.cant_marcos; i++) {
         if(!memoria.marcos[i].ocupado) {
@@ -1091,11 +1093,11 @@ int seleccionar_victima(int qid) {
             pthread_mutex_unlock(&memoria.mutex);
             return i;
         }
+        
     }
-
+    pthread_mutex_unlock(&memoria.mutex);
     // 2do: No hay marcos libres --> aplicar algoritmo de reemplazo
     int victima = 0;
-
     if( strcmp(memoria.algoritmo, "CLOCK-M") == 0) {
         victima = reemplazo_clock_modificado(qid);
     }
@@ -1106,7 +1108,7 @@ int seleccionar_victima(int qid) {
         log_info(loggerWorker, "Algoritmo desconocido '%s', se usará marco 0 por defecto", memoria.algoritmo);
     }
     
-    pthread_mutex_unlock(&memoria.mutex);
+    //pthread_mutex_unlock(&memoria.mutex);
     return victima;
 
 }
@@ -1225,6 +1227,7 @@ t_motivo enviar_bloque_a_storage(int qid, char* file_tag, int nro_pagina_logica,
 // 2do busca (U=0, M=1)
 // Si no encuentra, elige el marco actual.
 int reemplazo_clock_modificado(int qid) { 
+    
     if (memoria.cant_marcos <= 0) return 0;
     
     int vueltas = 0;
@@ -1246,6 +1249,7 @@ int reemplazo_clock_modificado(int qid) {
 
         } else {
             // obtengo la entrada de pagina correspondiente
+           
             pthread_mutex_lock(&mutex_tablas_paginas);
             t_tabla_paginas* tabla = dictionary_get(tablas_de_paginas, m->file_tag);
             t_pagina* pte = NULL;
@@ -1258,20 +1262,21 @@ int reemplazo_clock_modificado(int qid) {
 
             // Si PTE existe y PTE->uso == true, podemos ponerlo a false (solo en la 2da pasada) (en vueltas 1)
             if (pte && pte->uso) {
-                if (vueltas == 1) {
+                if (vueltas % 2 == 1) {
                     pte->uso = false; // "bajamos" el bit U
                 }
             }
+  
             pthread_mutex_unlock(&mutex_tablas_paginas);
 
             // Vuelta 1: buscar U=0, M=0
-            if(vueltas == 0 && !uso && !mod) {
+            if(vueltas % 2 == 0 && !uso && !mod) {
                 victima = idx;
                 break;
             }
 
             // Vuelta 2: buscar U=0, M=1
-            if(vueltas == 1 && !uso && mod) {
+            if(vueltas % 2 == 1 && !uso && mod) {
                 victima = idx;
                 break;
             }
@@ -1284,11 +1289,14 @@ int reemplazo_clock_modificado(int qid) {
         }
 
         // Avanzar puntero circular
+     
         memoria.puntero_clock = (memoria.puntero_clock + 1) % cantidad_marcos;
-        iteraciones++;
 
         // Si di una vuelta completa, paso a la segunda (detecto cabmio de vuelta)
-        if (memoria.puntero_clock == inicio) vueltas++; // 
+        if (memoria.puntero_clock == inicio) {
+  
+            vueltas++;
+        }// 
         //if (vueltas > 1) break; // si no encontro nada en dos vueltas
     }
 
@@ -1297,12 +1305,15 @@ int reemplazo_clock_modificado(int qid) {
 
     // Log: obtener info de la página seleccionada para el log
     t_marco* marco_victima = &memoria.marcos[victima];
+
     pthread_mutex_lock(&mutex_tablas_paginas);
     t_tabla_paginas* tabla_victima = dictionary_get(tablas_de_paginas, marco_victima->file_tag);
+
     t_pagina* pagina_victima = (tabla_victima ? buscar_pagina(tabla_victima, marco_victima->pagina_logica) : NULL);
     int uso_log = pagina_victima ? pagina_victima->uso : -1;
     int mod_log = pagina_victima ? pagina_victima->modificado : -1;
     pthread_mutex_unlock(&mutex_tablas_paginas);
+ 
 
     log_info(loggerWorker, "Query %d: CLOCK-M selecciono marco victima: %d (U=%d, M=%d)",
             qid, victima, uso_log, mod_log);

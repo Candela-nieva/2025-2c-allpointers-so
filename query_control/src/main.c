@@ -5,7 +5,7 @@ int main(int argc, char* argv[]) {
     
     // Ejemplo de parametros hardcodeados para pruebas rapidas
     config_queryCTRL = "query.config";
-    char* path_query = "ejemploQuery1";
+    char* path_query = "MEMORIA_WORKER";
     int prioridad = 0;
     
     // Parametros de entrada

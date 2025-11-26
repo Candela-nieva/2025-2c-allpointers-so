@@ -450,7 +450,6 @@ void cargar_config_hashIndex(){
     char path_blocks_hash[256];
     sprintf(path_blocks_hash, "%s/blocks_hash_index.config", config_struct->punto_montaje);
     configHash = config_create(path_blocks_hash);
-    
 }
 
 void cargar_config_superBlock(){

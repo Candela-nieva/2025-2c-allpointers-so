@@ -193,9 +193,8 @@ void atender_Worker(int fd){
                     agregar_a_exit(aDesalojar);
                     sem_post(&hay_en_Exit);
                 }
-                log_info(loggerMaster, "Antes de eliminar wcb, im not a genius");
                 eliminar_wcb(wcb);
-                log_info(loggerMaster, "Pase eliminar wcb, im a genius");
+      
                 return;
             case MASTER_TO_QC_READ_RESULT:
                 log_info(loggerMaster, "WORKER <%d>, Envia resultado de read a Query %d ", id_worker, wcb->qid_asig);
