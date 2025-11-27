@@ -288,7 +288,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
         
         // Comprobar interrupción (desalojo)
         if (atomic_load(&hay_interrupt) == 1) {
-            log_info(loggerWorker, "## Query %d: Se Desaloja por pedido del Master"); 
+            log_info(loggerWorker, "## Query %d: Se Desaloja por pedido del Master", qid); 
             atomic_store(&hay_interrupt, 0);
 
             for(int i = 0; i < list_size(archivos_abiertos); i++) {

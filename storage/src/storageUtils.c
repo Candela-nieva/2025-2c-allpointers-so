@@ -752,8 +752,6 @@ void marcar_libre_en_bitmap(int nro_fisico, int query_id) {
     bitarray_clean_bit(bitarray, nro_fisico);
     size_t bytes_bitmap = (cantBloq + 7) / 8;
     msync(mappeo, bytes_bitmap, MS_SYNC);
-    // LOG OBLIGATORIO //
-    log_info(loggerStorage, "##%d - Bloque Físico Liberado - Número de Bloque: %d", query_id, nro_fisico);
 }
 
 void marcar_ocupado_en_bitmap(int nro_fisico) {
@@ -1118,6 +1116,7 @@ void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id) {
             //al inicio porque ocupamos mucha memoria, e irlos creando
             //a medida que los piden? En ese caso:
             //unlink(path_bloque_fisico)
+            // LOG OBLIGATORIO //
             log_info(loggerStorage, "##%d - Bloque Físico Liberado - Número de Bloque: %d", query_id, bloque_fisico);
         }
     }
