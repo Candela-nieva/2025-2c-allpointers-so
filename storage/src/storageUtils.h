@@ -40,6 +40,7 @@ typedef enum {
 typedef struct {
     char *nombreArch;
     t_dictionary *tags;
+    pthread_mutex_t mutex_diccionario_tags;
 }t_fcb;
 
 typedef struct {

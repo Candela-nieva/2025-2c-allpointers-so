@@ -97,7 +97,7 @@ void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker);
 void agregar_a_ready(t_qcb* qcb);
 void agregar_a_exec(t_qcb* qcb);
 void agregar_a_exit(t_qcb* qcb);
-void remover_qcb_cola(int qid, t_list *cola, pthread_mutex_t mutexCola);
+void remover_qcb_cola(int qid, t_list *cola, pthread_mutex_t* mutexCola);
 //===============MENSAJES===============
 void enviar_mensaje_exit(int socketQuery, t_motivo motivo);
 

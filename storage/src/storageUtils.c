@@ -97,10 +97,12 @@ void destruir_fcb_item(void* elemento) {
     t_fcb* fcb = (t_fcb*)elemento;
     if (fcb) {
         if (fcb->nombreArch) free(fcb->nombreArch);
-        
+        pthread_mutex_lock(&(fcb->mutex_diccionario_tags));
         if (fcb->tags) {
             dictionary_destroy_and_destroy_elements(fcb->tags, destruir_tag_item);
         }
+        pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
+        pthread_mutex_destroy(&(fcb->mutex_diccionario_tags));
         free(fcb);
     }
 }
@@ -1267,6 +1269,7 @@ t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
     t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreNuevoArch, fcb->tags);
     nuevoTag->physicalBlocks = list_create();
     dictionary_put(diccionario_archivos,fcb->nombreArch,fcb);
+    pthread_mutex_init(&(fcb->mutex_diccionario_tags), NULL);
     log_info(loggerStorage, "%s:%s : Registrado", fcb->nombreArch, nuevoTag->nombreTag);
     return fcb;
 }
@@ -1285,7 +1288,9 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
     tag->logBlocks = 0;
     tag->estado = WORK_IN_PROGRESS;
     pthread_mutex_init(&tag->mutexTag, NULL);
+    
     dictionary_put(diccionarioTagsArch, tag->nombreTag, tag);
+    
     return tag;
 }
 
@@ -1295,7 +1300,9 @@ t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
         log_info(loggerStorage, "Error : Archivo No Encontrado : %s",Arch);
         return NULL;
     }
+    pthread_mutex_lock(&(fcb->mutex_diccionario_tags));
     t_tag *tag = dictionary_get(fcb->tags, Tag);
+    pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
     //log_info(loggerStorage, "Enviaron %s:%s, encontramos %s:%s", Arch, Tag, fcb->nombreArch, tag->nombreTag);
     return tag;
 }
@@ -1311,17 +1318,22 @@ bool archRepetido(char *nombreArch){
 
 bool tagRepetido(char *nombreArch, char *nombreTag){
     t_fcb *fcb = dictionary_get(diccionario_archivos, nombreArch);
+    pthread_mutex_lock(&(fcb->mutex_diccionario_tags));
     if(dictionary_has_key(fcb->tags,nombreTag)){
+        pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
         log_info(loggerStorage, "Error : Nombre de Tag Repetido : %s | %s",nombreArch, nombreTag);
         return true;
     }else{
+        pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
         return false;
     }
 }
 
 void eliminarStructTag(char* nombreArch, char *nombreTag){
     t_fcb *fcb = dictionary_get(diccionario_archivos,nombreArch);
+    pthread_mutex_lock(&(fcb->mutex_diccionario_tags));
     t_tag *tag = dictionary_remove(fcb->tags,nombreTag);
+    pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
     if(tag != NULL) {
         //log_info(loggerStorage, "Se eliminara %s:%s", nombreArch, tag->nombreTag);
         destruir_tag_item(tag);

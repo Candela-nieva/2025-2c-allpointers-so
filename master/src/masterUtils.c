@@ -180,30 +180,31 @@ void atender_Worker(int fd){
         pthread_mutex_lock(&wcb->mutex_wcb);
         int qid_asig = wcb->qid_asig;
         pthread_mutex_unlock(&wcb->mutex_wcb);
+        if(op == -1) {
+            log_info(loggerMaster, "DESCONEXION del WORKER <%d>", id_worker);
+            pthread_mutex_lock(&mutex_cant_workers);
+            --cant_workers;
+            pthread_mutex_unlock(&mutex_cant_workers);
+            pthread_mutex_lock(&wcb->mutex_wcb);
+            if(wcb->qid_asig >= 0){
+                //podria traer errores si al wcb le quedo el qid de una query que termino REVISAR
+                log_info(loggerMaster, "Mato la query ejecutando en worker, QUERY <%d>", wcb->qid_asig);
+                t_qcb *aDesalojar = buscar_qcb_por_ID(wcb->qid_asig);
+                pthread_mutex_lock(&(aDesalojar->mutex_qcb));
+                enviar_mensaje_exit(aDesalojar->socket, DESCONEXION_WORKER);
+                pthread_mutex_unlock(&(aDesalojar->mutex_qcb));
+                remover_qcb_cola(wcb->qid_asig,cola_exec,&mutex_cola_exec);
+                pthread_mutex_unlock(&wcb->mutex_wcb);
+                agregar_a_exit(aDesalojar);
+                sem_post(&hay_en_Exit);
+            }
+            pthread_mutex_unlock(&wcb->mutex_wcb);
+            eliminar_wcb(wcb);
+            return;
+        }
         switch(op) {
             //case LECTURA:
             //case EXIT_QUERY:
-            case -1:
-                log_info(loggerMaster, "DESCONEXION del WORKER <%d>", id_worker);
-                pthread_mutex_lock(&mutex_cant_workers);
-                --cant_workers;
-                pthread_mutex_unlock(&mutex_cant_workers);
-                pthread_mutex_lock(&wcb->mutex_wcb);
-                if(wcb->qid_asig >= 0){
-                    //podria traer errores si al wcb le quedo el qid de una query que termino REVISAR
-                    log_info(loggerMaster, "Mato la query ejecutando en worker, QUERY <%d>", wcb->qid_asig);
-                    t_qcb *aDesalojar = buscar_qcb_por_ID(wcb->qid_asig);
-                    pthread_mutex_lock(&(aDesalojar->mutex_qcb));
-                    enviar_mensaje_exit(aDesalojar->socket, DESCONEXION_WORKER);
-                    pthread_mutex_unlock(&(aDesalojar->mutex_qcb));
-                    remover_qcb_cola(wcb->qid_asig,cola_exec,mutex_cola_exec);
-                    pthread_mutex_unlock(&wcb->mutex_wcb);
-                    agregar_a_exit(aDesalojar);
-                    sem_post(&hay_en_Exit);
-                }
-                pthread_mutex_unlock(&wcb->mutex_wcb);
-                eliminar_wcb(wcb);
-                return;
             case MASTER_TO_QC_READ_RESULT:
                 log_info(loggerMaster, "WORKER <%d>, Envia resultado de read a Query %d ", id_worker, wcb->qid_asig);
                 //enviar a query resultado de read
@@ -266,7 +267,7 @@ void atender_Worker(int fd){
                 
                 log_info(loggerMaster, "WORKER ID <%d> : indico fin de query %d, motivo : %d", id_worker, qid_asig, motivoExit);
                 t_qcb *qcbExit = buscar_qcb_por_ID(qid_asig);
-                remover_qcb_cola(qid_asig,cola_exec,mutex_cola_exec);
+                remover_qcb_cola(qid_asig,cola_exec,&mutex_cola_exec);
 
                 pthread_mutex_lock(&wcb->mutex_wcb);
                 wcb->qid_asig = -1;
@@ -330,14 +331,13 @@ void atender_QueryControl(int fd){
 
     while(true){
         op_code op = recibir_operacion(fd);
-        switch(op) {
-            case -1:
-                pthread_mutex_lock(&(qcb->mutex_qcb));
+        if(op == -1) {
+            pthread_mutex_lock(&(qcb->mutex_qcb));
                 switch(qcb->estado) {
                     case READY:
                         log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado READY", id_query);
                         //actualizar_Estado(qcb, EXIT);
-                        remover_qcb_cola(qcb->qid,cola_ready,mutex_cola_ready);
+                        remover_qcb_cola(qcb->qid,cola_ready,&mutex_cola_ready);
                         pthread_mutex_unlock(&(qcb->mutex_qcb));
                         agregar_a_exit(qcb);
                         sem_post(&hay_en_Exit);
@@ -345,7 +345,7 @@ void atender_QueryControl(int fd){
                         return;
                     case EXEC:
                         log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXEC", id_query);
-                        remover_qcb_cola(qcb->qid,cola_exec,mutex_cola_exec);
+                        remover_qcb_cola(qcb->qid,cola_exec,&mutex_cola_exec);
                         mandar_a_desalojar(qcb);
                         pthread_mutex_unlock(&(qcb->mutex_qcb));
                         agregar_a_exit(qcb);
@@ -355,11 +355,11 @@ void atender_QueryControl(int fd){
                     pthread_mutex_unlock(&(qcb->mutex_qcb));
                         log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXIT", id_query);
                         return;
-                }
-            default:
-                log_info(loggerMaster, "Operacion desconocida recibida del Query Control ID <%d>, %d", id_query, op);
-                return;
-        }
+            }
+        }else{
+            log_info(loggerMaster, "Operacion desconocida recibida del QUERY CONTROL ID <%d> : %d", id_query, op);
+            return;
+        } 
     }
 }
 //INTENTO IMPLEMENTAR DESAALOJOO
@@ -634,7 +634,7 @@ void planificador_prioridades(){
                 pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
                 t_wcb* wcb_elegido = buscar_worker_libre();
                 if(wcb_elegido){
-                    remover_qcb_cola(qid_exec, cola_ready, mutex_cola_ready);
+                    remover_qcb_cola(qid_exec, cola_ready, &mutex_cola_ready);
                     agregar_a_exec(qcb_exec);
                     mandar_a_ejecutar(qcb_exec, wcb_elegido);
                 }else{
@@ -652,10 +652,10 @@ void planificador_prioridades(){
                         int qid_actual = qcb_actual->qid;
                         log_info(loggerMaster, "Desalojando Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_actual->ruta_arch, qcb_actual->prioridad, qcb_actual->qid);
                         pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
-                        remover_qcb_cola(qid_actual, cola_exec, mutex_cola_exec);
+                        remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
                         mandar_a_desalojar(qcb_actual);
                         log_info(loggerMaster, "REMUEVO DE COLA READY");
-                        remover_qcb_cola(qid_exec, cola_ready, mutex_cola_ready);
+                        remover_qcb_cola(qid_exec, cola_ready, &mutex_cola_ready);
                         log_info(loggerMaster, "AGREGO A EXEC");
                         agregar_a_exec(qcb_exec);
                         log_info(loggerMaster, "MANDO A EJECUTAR");
@@ -741,20 +741,20 @@ void agregar_a_exit(t_qcb* qcb){
     pthread_mutex_unlock(&mutex_cola_exit);
 }
 
-void remover_qcb_cola(int qid, t_list *cola, pthread_mutex_t mutexCola){
-    pthread_mutex_lock(&mutexCola);
+void remover_qcb_cola(int qid, t_list *cola, pthread_mutex_t* mutexCola){
+    pthread_mutex_lock(mutexCola);
     for(int i = 0; i < list_size(cola); i++){
         t_qcb *candidato = list_get(cola,i);
         pthread_mutex_lock(&(candidato->mutex_qcb));
         if(candidato->qid == qid){
             pthread_mutex_unlock(&(candidato->mutex_qcb));
             list_remove(cola,i);
-            pthread_mutex_unlock(&mutexCola);
+            pthread_mutex_unlock(mutexCola);
             return;
         }
         pthread_mutex_unlock(&(candidato->mutex_qcb));
     }
-    pthread_mutex_unlock(&mutexCola);
+    pthread_mutex_unlock(mutexCola);
     log_info(loggerMaster, "No se encontro el qid %d en la cola a remover", qid);
     return;
 }
