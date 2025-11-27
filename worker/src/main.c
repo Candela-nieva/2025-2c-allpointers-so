@@ -2,17 +2,17 @@
 #include "workerUtils.h"
 int main(int argc, char* argv[]) {
 
-     /*if(argc < 3) { // mientras usamos printf no esta mal, pero al usar log_info necesitamos el logger inicializado
-        printf("Uso: %s <path_config> <worker_id>\n", argv[0]);
+    if(argc < 3) { // mientras usamos printf no esta mal, pero al usar log_info necesitamos el logger inicializado
+        //printf("Uso: %s <path_config> <worker_id>\n", argv[0]);
         return EXIT_FAILURE;
-    }*/
+    }
 
     // Parametros de entrada
-    config_worker = "worker.config";
-    int worker_id = 1;
+    //config_worker = "worker.config";
+    //int worker_id = 1;
 
-    //config_worker = argv[1];
-    //int worker_id = atoi(argv[2]);
+    config_worker = argv[1];
+    int worker_id = atoi(argv[2]);
     //saludar("worker");
 
     inicializar_config();

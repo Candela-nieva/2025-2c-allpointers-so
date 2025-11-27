@@ -271,7 +271,6 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     while (fgets(linea, sizeof(linea), file) != NULL) { // Mientras haya líneas por leer (fgets lee una línea)
         
         trim_newline(linea);
-
         log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea); // fetch de la linea LOG OBLIGATORIO
         
         es_end = ejecutar_instruccion(linea, qid, pc, archivos_abiertos);
@@ -359,13 +358,14 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
     trim_newline(copia);
 
     char* op = strtok(copia, " "); // Obtenemos la operación (primera palabra)
-    log_info(loggerWorker, "Operacion registrada : %s", op);    
+    log_info(loggerWorker, "Operacion registrada : %s", op);
+     
     if(!op) {
         log_info(loggerWorker, "Query %d: - Instrucción vacía en PC=%d", qid, pc);
         free(copia);
         return false;
     }
-
+      
     // Guardamos la operación para el log obligatorio
     char instruccion_log[256];
     strncpy(instruccion_log, op, 255);
@@ -379,10 +379,11 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
     int direccion = 0;
     int tam = 0;
     int nuevo_tam = 0;
-
+   
     tipo_instruccion inst_tipo = obtener_instruccion(op);
-
-    char* file_tag = strtok(NULL, " "); // 
+     
+    char* file_tag = strtok(NULL, " "); //
+      
     log_info(loggerWorker, "File_Tag a operar : %s", file_tag);
     // Si escribimos, leemos, creamos tag o truncamos, el archivo queda "abierto" o potencialmente modificado
     if (file_tag != NULL && archivos_abiertos != NULL)
@@ -528,10 +529,8 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
             t_motivo motivo;
             // pagina = 
             manejar_page_fault(tag, pagina, qid, &motivo);
-            /* if (!pagina) {
-                log_error(loggerWorker, "Query %d:  ejecutar_write: Falló el Page Fault. Abortando escritura.", qid);
-                return motivo; // FRACASO (el manejador ya notificó al Master)
-            }*/
+            if(motivo != RESULTADO_OK)
+                return motivo;
         }
     
         // 2. Calcular lo que se puede escribir en esta página (cuantos bytes escribimos en esta pagina)
@@ -558,9 +557,11 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
         pthread_mutex_unlock(&memoria.mutex);
 
         // 4. Actualizar metadata de la página
+        pthread_mutex_lock(&mutex_tablas_paginas);
         pagina->modificado = true;
         pagina->uso = true;
         pagina->ultima_ref = time(NULL);
+        pthread_mutex_unlock(&mutex_tablas_paginas);
 
         // 5. Avanzar punteros/contadores
         ptr_contenido += a_escribir;
@@ -578,9 +579,7 @@ t_motivo ejecutar_write(char* tag, int direccion_base, char* contenido, int qid)
 
 // Maneja un page fault para la página lógica dada char* nombreArch, char* nombreTag,
 void manejar_page_fault(char* file_tag, t_pagina* paginaAusente, int qid, t_motivo *motivo) {
-    
     //posible semafoso lock
-    
     char* file_origen;
     char* tag_origen;
     char* copia_tag = strdup(file_tag);
@@ -615,7 +614,7 @@ void manejar_page_fault(char* file_tag, t_pagina* paginaAusente, int qid, t_moti
                 *motivo = enviar_bloque_a_storage(qid, file_tag_victima, marco_victima->pagina_logica, contenido_victima);
                 if (*motivo != RESULTADO_OK) {
                     log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, *motivo);
-                    pthread_mutex_unlock(&mutex_tablas_paginas);
+                    //pthread_mutex_unlock(&mutex_tablas_paginas);
                     free(copia_tag);
                     return NULL; // Error al guardar la víctima
                 }
@@ -643,7 +642,7 @@ void manejar_page_fault(char* file_tag, t_pagina* paginaAusente, int qid, t_moti
     if (*motivo != RESULTADO_OK) {
         log_error(loggerWorker, "Query %d: Falló al traer bloque de Storage. Motivo: %d", qid, *motivo);
         free(copia_tag);
-        return NULL; // Error al traer el bloque (Storage dijo que no existe)
+        return; // Error al traer el bloque (Storage dijo que no existe)
     }
 
     // Actualizamos metadata del marco ya está en solicitar
@@ -691,7 +690,7 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
             log_info(loggerWorker, "Query %d: Page fault en READ: %s - Pagina %d", qid, file_tag, pagina_inicial);
             t_motivo motivo;
             manejar_page_fault(file_tag, pagina, qid, &motivo); // modifica la pagina para setear el nuevo marco
-
+            
             if (!pagina) {
                 free(buffer_lectura);
                 return motivo;
@@ -850,9 +849,9 @@ t_motivo ejecutar_flush(char* file_tag, int qid){
             pthread_mutex_unlock(&mutex_tablas_paginas);
             
             paginas_flusheadas++;
-        } else {
+        } /*else {
             pthread_mutex_unlock(&mutex_tablas_paginas);
-        }
+        }*/
     }
     log_info(loggerWorker, "FLUSH exitoso %s. Páginas: %d", file_tag, paginas_flusheadas);
     return RESULTADO_OK;
@@ -897,11 +896,8 @@ void manejar_errores(t_motivo motivo, int qid) {
     switch(motivo) {
         case RESULTADO_OK:
             return; // No hay error
-        case ERROR_FILE_INEXISTENTE:
-            log_error(loggerWorker, "Query %d: Error - File inexistente.", qid);
-            break;
-        case ERROR_TAG_INEXISTENTE:
-            log_error(loggerWorker, "Query %d: Error - Tag inexistente.", qid);
+        case ERROR_FILETAG_INEXISTENTE:
+            log_error(loggerWorker, "Query %d: Error - File:Tag inexistente.", qid);
             break;
         case ERROR_FILE_PREEXISTENTE:
             log_error(loggerWorker, "Query %d: Error - File preexistente.", qid);
@@ -936,6 +932,8 @@ void manejar_errores(t_motivo motivo, int qid) {
         case ERROR_TAMANIO_NO_MULTIPLO:
             log_error(loggerWorker, "Query %d: Error - Tamaño no es multiplo del tamaño de pagina", qid);
             break;
+        case ERROR_INITIALFILE_DELETE:
+            log_error(loggerWorker, "Query %d: Error - No se puede borrar el archivo Initial File:Base.", qid);
         default:
             motivo = ERROR_DESCONOCIDO;
             break;

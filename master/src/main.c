@@ -2,7 +2,10 @@
 
 int main(int argc, char* argv[]) {
     //saludar("master");
-    config_master = "master.config";
+    if(argc < 2)
+        return EXIT_FAILURE;
+    config_master = argv[1];
+
     inicializar_master();
     return 0;
 }

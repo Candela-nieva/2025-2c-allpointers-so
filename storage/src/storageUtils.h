@@ -40,7 +40,7 @@ typedef enum {
 typedef struct {
     char *nombreArch;
     t_dictionary *tags;
-    pthread_mutex_t mutex_diccionario_tags;
+    pthread_mutex_t mutex_fcb;
 }t_fcb;
 
 typedef struct {
@@ -141,7 +141,7 @@ char* leer_contenido_bloque(char* path_bloque_logico);
 void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id);
 //============================= FCB Y TAGS ==================================
 t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag);
-t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionarioTagsArch);
+t_tag *crear_tag(char *nombreNuevoTag, t_fcb *fcbArch);
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag);
 char *path_Metadata(char *nombreArch, char *nombreTag);
 //void eliminar_bloq_log(t_tag *tag);

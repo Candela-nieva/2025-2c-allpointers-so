@@ -2,7 +2,9 @@
 
 int main(int argc, char* argv[]) {
     //saludar("storage");
-    config_storage = "storage.config";
+    if(argc < 2)
+        return EXIT_FAILURE;
+    config_storage = argv[1];
     //signal(SIGINT, terminar_programa_storage);
 
     inicializar_config();

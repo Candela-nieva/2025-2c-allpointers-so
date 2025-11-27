@@ -27,6 +27,9 @@ t_config* configHash = NULL;
 pthread_mutex_t mutex_hash_index;
 pthread_mutex_t mutex_bitmap;
 pthread_mutex_t mutex_diccionario_archivos;
+
+char *nombreInitialFile = "initial_file";
+char *nombreInitialTag = "BASE";
 //==========INICIALIZACION==========
 //prueba
 
@@ -97,12 +100,12 @@ void destruir_fcb_item(void* elemento) {
     t_fcb* fcb = (t_fcb*)elemento;
     if (fcb) {
         if (fcb->nombreArch) free(fcb->nombreArch);
-        pthread_mutex_lock(&(fcb->mutex_diccionario_tags));
+        pthread_mutex_lock(&(fcb->mutex_fcb));
         if (fcb->tags) {
             dictionary_destroy_and_destroy_elements(fcb->tags, destruir_tag_item);
         }
-        pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
-        pthread_mutex_destroy(&(fcb->mutex_diccionario_tags));
+        pthread_mutex_unlock(&(fcb->mutex_fcb));
+        pthread_mutex_destroy(&(fcb->mutex_fcb));
         free(fcb);
     }
 }
@@ -355,7 +358,7 @@ void atenderWrite(int fd_conexion, void* buffer){
     free(buffer);
 
     t_motivo resultado = op_write_block(nombreArch, nombreTag, nroBloqueLogico, contenido, QID);
-    enviar_operacion(fd_conexion,resultado);
+    enviar_operacion(fd_conexion, resultado);
     if(nombreArch)
         free(nombreArch);
     if(nombreTag)
@@ -525,8 +528,10 @@ void recuperar_estructuras_FS() {
         t_fcb *fcb = malloc(sizeof(t_fcb));
         fcb->nombreArch = strdup(nombre_archivo);
         fcb->tags = dictionary_create();
+        pthread_mutex_init(&(fcb->mutex_fcb), NULL);
+        pthread_mutex_lock(&mutex_diccionario_archivos);
         dictionary_put(diccionario_archivos, fcb->nombreArch, fcb);
-        
+        pthread_mutex_unlock(&mutex_diccionario_archivos);
         //log_info(loggerStorage, "Recuperado FCB: %s", nombre_archivo);
 
         recuperar_tags_file(nombre_archivo, fcb);
@@ -557,20 +562,7 @@ void recuperar_tags_file(char *nombre_archivo, t_fcb *file){
             log_error(loggerStorage, "Metadata corrupta o faltante en %s:%s", nombre_archivo, nombre_tag);
             continue;
         }
-        t_tag *tag = crear_tag(nombre_tag, nombre_archivo, file->tags);
-        //t_tag *tag = malloc(sizeof(t_tag));
-        //tag->nombreTag = strdup(nombre_tag);
-        //tag->pathTag = malloc(512);
-        //sprintf(tag->pathTag, "%s/%s/%s", path_files, nombre_archivo, nombre_tag);    
-        //tag->tamanio = meta->tamanio;
-
-        //t_tag *tag = malloc(sizeof(t_tag));
-        //char *pathNuevoTag = malloc(256); 
-        //sprintf(pathNuevoTag, "%s/%s/%s", path_files, nombre_archivo, nombre_tag);
-        //tag->pathTag = pathNuevoTag;
-        //log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag);
-        //tag->nombreTag = strdup (nombre_tag);
-        //log_info(loggerStorage,"Nuevo Nombre Tag = %s", tag->nombreTag);
+        t_tag *tag = crear_tag(nombre_tag,file);
         tag->tamanio = meta->tamanio;
         if (strcmp(meta->estado, "COMMITED") == 0) 
             tag->estado = COMMITED;
@@ -718,14 +710,17 @@ void crear_physical_blocks() {
 }
 
 void initialFile(){
-    op_create("initial_file","BASE", 0);
-    op_truncate("initial_file","BASE", tam_bloq, 0);
+
+    op_create(nombreInitialFile,nombreInitialTag, 0);
+    op_truncate(nombreInitialFile,nombreInitialTag, tam_bloq, 0);
+
     char escrituraInicial[tam_bloq + 1];
     memset(escrituraInicial, '0', (tam_bloq));
     escrituraInicial[tam_bloq] = '\0';
-    op_write_block("initial_file","BASE", 0,escrituraInicial, 0);
-    op_commit("initial_file", "BASE", 0);
+    op_write_block(nombreInitialFile,nombreInitialTag, 0,escrituraInicial, 0);
 
+    op_commit(nombreInitialFile,nombreInitialTag, 0);
+    
     
     //char escrituraInicial[tam_bloq + 1];
     //memset(escrituraInicial, '0', (tam_bloq));
@@ -854,7 +849,7 @@ t_motivo op_create(char *nombreArch, char *nombreTag, int query_id){
 t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int query_id) {
     usleep(retardo_operacion  * 1000);
     t_metadata* meta = leer_metadata(nombreArch, nombreTag);
-    if (!meta) return ERROR_FILE_INEXISTENTE;
+    if (!meta) return ERROR_FILETAG_INEXISTENTE;
     
     int bloques_actuales = meta->tamanio / tam_bloq;
     int bloques_nuevos = nuevoTamanio / tam_bloq;
@@ -863,7 +858,7 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
     if (!tag) {
         log_info(loggerStorage, "##%d - Tag inexistente %s:%s", query_id,nombreArch, nombreTag);
         destruir_metadata(meta);
-        return ERROR_TAG_INEXISTENTE;
+        return ERROR_FILETAG_INEXISTENTE;
     }
     if (tag->estado == COMMITED) {
         log_info(loggerStorage, "##%d - File:Tag %s:%s ya está COMMITED. No hay cambios", query_id, nombreArch, nombreTag);
@@ -952,9 +947,15 @@ t_motivo op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino
     usleep(retardo_operacion  * 1000);
     //log_info(loggerStorage, "Operación TAG de %s:%s a %s:%s", nombreArch, nombreTagOrigen, nombreArchDestino, nombreNuevoTag);
     //log_info(loggerStorage, "buscando file: %s", nombreArchDestino);
+    pthread_mutex_lock(&mutex_diccionario_archivos);
     t_fcb* fcbDestino = dictionary_get(diccionario_archivos, nombreArchDestino);
+    pthread_mutex_unlock(&mutex_diccionario_archivos);
     if(!fcbDestino){
-        return ERROR_FILE_INEXISTENTE;
+        return ERROR_FILETAG_INEXISTENTE;
+    }
+    if(tagRepetido(nombreArchDestino,nombreNuevoTag)){
+        log_info(loggerStorage, "##%d - Fallo : Tag preexistente %s:%s", query_id,nombreArchDestino, nombreNuevoTag);
+        return ERROR_TAG_PREEXISTENTE;
     }
     t_tag *tagOrigen = buscar_Tag_Arch(nombreArch,nombreTagOrigen);
     if(tagOrigen){
@@ -968,7 +969,7 @@ t_motivo op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino
         crear_copia_tag(nombreArchDestino,tagOrigen,nombreNuevoTag);
         return RESULTADO_OK;
     }
-    return ERROR_TAG_INEXISTENTE;
+    return ERROR_FILETAG_INEXISTENTE;
 }
 
 t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
@@ -1070,7 +1071,7 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
         pthread_mutex_unlock(&tag->mutexTag);
         return RESULTADO_OK;
     }
-    return ERROR_TAG_INEXISTENTE;
+    return ERROR_FILETAG_INEXISTENTE;
 }
 
 char* leer_contenido_bloque(char* path_bloque_logico) {
@@ -1128,7 +1129,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if (!tag) {
         log_info(loggerStorage, "##%d - Tag inexistente %s:%s", query_id, nombreArch, nombreTag);
-        return ERROR_TAG_INEXISTENTE;
+        return ERROR_FILETAG_INEXISTENTE;
     }
     if(nroBloque > tag->logBlocks){
         log_info(loggerStorage, "##%d - Fallo : Escritura fuera de rango %s:%s", query_id, nombreArch, nombreTag);
@@ -1201,25 +1202,28 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 free(pathBloqLog);
                 free(pathBloqFis);
                 free(nuevoPathBloqFis);
-                //return RESULTADO_OK;
-                //faltan frees y falta mejor implementacion de bloques logicos
+                log_info(loggerStorage, "##%d - Bloque Lógico Escrito %s:%s - Número de Bloque: %d",query_id, nombreArch, nombreTag, nroBloque);
+                return RESULTADO_OK;
             }
-            
         } else {
-            log_info(loggerStorage, "##%d - File:Tag %s:%s ya está COMMITED. No hay cambios", query_id ,nombreArch, nombreTag);
+            log_info(loggerStorage, "##%d - Error al verificar path de bloque Físico", query_id ,nombreArch, nombreTag);
             free(pathBloqLog);
             free(pathBloqFis);
-            return ERROR_ESCRITURA_NO_PERMITIDA; 
+            return ERROR_NO_PUDO_ABRIR_ARCHIVO; 
         }
     }
-    log_info(loggerStorage, "##%d - Bloque Lógico Escrito %s:%s - Número de Bloque: %d",query_id, nombreArch, nombreTag, nroBloque);
-    return RESULTADO_OK; //tendria que ir aca el return
+    //log_info(loggerStorage, "##%d - Bloque Lógico Escrito %s:%s - Número de Bloque: %d",query_id, nombreArch, nombreTag, nroBloque);
+    //return RESULTADO_OK; //tendria que ir aca el return
+
+    log_info(loggerStorage, "##%d - File:Tag %s:%s ya está COMMITED. No hay cambios", query_id ,nombreArch, nombreTag);
+    return ERROR_ESCRITURA_NO_PERMITIDA;
 }
 
 t_motivo op_read_block(char* nombreArch, char *nombreTag, int nroBloque, char **contenido, int query_id){
     usleep(retardo_operacion  * 1000);
     t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
-    
+    if(tag == NULL)
+        return ERROR_FILETAG_INEXISTENTE; 
     char *pathBloq = obtener_path_bloq_logico(tag,nroBloque);
     if(nroBloque >= tag->logBlocks || nroBloque < 0){
         log_info(loggerStorage, "##%d - Fallo : Lectura fuera de rango %s:%s", query_id,nombreArch, nombreTag);
@@ -1240,8 +1244,11 @@ t_motivo op_read_block(char* nombreArch, char *nombreTag, int nroBloque, char **
 t_motivo op_delete_tag(char* nombreArch, char *nombreTag, int query_id){
     usleep(retardo_operacion * 1000);
     t_tag *tag = buscar_Tag_Arch(nombreArch, nombreTag);
-    if(!tag){
-        return ERROR_TAG_INEXISTENTE;
+    if(!tag)
+        return ERROR_FILETAG_INEXISTENTE;
+    if(nombreArch == nombreInitialFile && nombreTag == nombreInitialTag){
+        log_info(loggerStorage, "##%d - Fallo : No se puede eliminar el Tag Inicial %s:%s", query_id,nombreArch, nombreTag);
+        return ERROR_INITIALFILE_DELETE;
     }
     for(int i = 0; i < tag->logBlocks; i++){
         int *bloqActual = (int*)list_get(tag->physicalBlocks, i);            
@@ -1266,74 +1273,81 @@ t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
     t_fcb *fcb = malloc(sizeof(t_fcb));
     fcb->nombreArch = strdup(nombreNuevoArch);
     fcb->tags = dictionary_create();
-    t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreNuevoArch, fcb->tags);
+    pthread_mutex_init(&(fcb->mutex_fcb), NULL);
+    t_tag *nuevoTag = crear_tag(nombreNuevoTag, fcb);
     nuevoTag->physicalBlocks = list_create();
+    pthread_mutex_lock(&mutex_diccionario_archivos);
     dictionary_put(diccionario_archivos,fcb->nombreArch,fcb);
-    pthread_mutex_init(&(fcb->mutex_diccionario_tags), NULL);
+    pthread_mutex_unlock(&mutex_diccionario_archivos);
     log_info(loggerStorage, "%s:%s : Registrado", fcb->nombreArch, nuevoTag->nombreTag);
     return fcb;
 }
 
-t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionarioTagsArch){
+t_tag *crear_tag(char *nombreNuevoTag, t_fcb *fcbArch){
     t_tag *tag = malloc(sizeof(t_tag));
     char *pathNuevoTag = malloc(256); 
-    sprintf(pathNuevoTag, "%s/%s/%s", path_files, nombreArch, nombreNuevoTag);
+    pthread_mutex_lock(&(fcbArch->mutex_fcb));
+    sprintf(pathNuevoTag, "%s/%s/%s", path_files, fcbArch->nombreArch, nombreNuevoTag);
+    pthread_mutex_unlock(&(fcbArch->mutex_fcb));
     tag->pathTag = pathNuevoTag;
-    //log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag);
     tag->nombreTag = strdup (nombreNuevoTag);
-    //log_info(loggerStorage,"Nuevo Nombre Tag = %s", tag->nombreTag);
-    //tag->nombreTag = nombreNuevoTag;
     tag->tamanio = 0;
-    //tag->physicalBlocks = list_create();
     tag->logBlocks = 0;
     tag->estado = WORK_IN_PROGRESS;
     pthread_mutex_init(&tag->mutexTag, NULL);
-    
-    dictionary_put(diccionarioTagsArch, tag->nombreTag, tag);
-    
+    pthread_mutex_lock(&(fcbArch->mutex_fcb));
+    dictionary_put(fcbArch->tags, tag->nombreTag, tag);
+    pthread_mutex_unlock(&(fcbArch->mutex_fcb));
     return tag;
 }
 
 t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
+    pthread_mutex_lock(&mutex_diccionario_archivos);
     t_fcb *fcb = dictionary_get(diccionario_archivos, Arch);
+    pthread_mutex_unlock(&mutex_diccionario_archivos);
     if(!fcb){
         log_info(loggerStorage, "Error : Archivo No Encontrado : %s",Arch);
         return NULL;
     }
-    pthread_mutex_lock(&(fcb->mutex_diccionario_tags));
+    pthread_mutex_lock(&(fcb->mutex_fcb));
     t_tag *tag = dictionary_get(fcb->tags, Tag);
-    pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
+    pthread_mutex_unlock(&(fcb->mutex_fcb));
     //log_info(loggerStorage, "Enviaron %s:%s, encontramos %s:%s", Arch, Tag, fcb->nombreArch, tag->nombreTag);
     return tag;
 }
 
 bool archRepetido(char *nombreArch){
+    pthread_mutex_lock(&mutex_diccionario_archivos);
     if(dictionary_has_key(diccionario_archivos,nombreArch)){
+        pthread_mutex_unlock(&mutex_diccionario_archivos);
         log_info(loggerStorage, "Error : Nombre de Archivo Repetido : %s",nombreArch);
         return true;
     }else{
+        pthread_mutex_unlock(&mutex_diccionario_archivos);
         return false;
     }
 }
 
 bool tagRepetido(char *nombreArch, char *nombreTag){
     t_fcb *fcb = dictionary_get(diccionario_archivos, nombreArch);
-    pthread_mutex_lock(&(fcb->mutex_diccionario_tags));
+    pthread_mutex_lock(&(fcb->mutex_fcb));
     if(dictionary_has_key(fcb->tags,nombreTag)){
-        pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
+        pthread_mutex_unlock(&(fcb->mutex_fcb));
         log_info(loggerStorage, "Error : Nombre de Tag Repetido : %s | %s",nombreArch, nombreTag);
         return true;
     }else{
-        pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
+        pthread_mutex_unlock(&(fcb->mutex_fcb));
         return false;
     }
 }
 
 void eliminarStructTag(char* nombreArch, char *nombreTag){
+    pthread_mutex_lock(&mutex_diccionario_archivos);
     t_fcb *fcb = dictionary_get(diccionario_archivos,nombreArch);
-    pthread_mutex_lock(&(fcb->mutex_diccionario_tags));
+    pthread_mutex_unlock(&mutex_diccionario_archivos);
+    pthread_mutex_lock(&(fcb->mutex_fcb));
     t_tag *tag = dictionary_remove(fcb->tags,nombreTag);
-    pthread_mutex_unlock(&(fcb->mutex_diccionario_tags));
+    pthread_mutex_unlock(&(fcb->mutex_fcb));
     if(tag != NULL) {
         //log_info(loggerStorage, "Se eliminara %s:%s", nombreArch, tag->nombreTag);
         destruir_tag_item(tag);
@@ -1341,8 +1355,10 @@ void eliminarStructTag(char* nombreArch, char *nombreTag){
 }
 
 void crear_copia_tag(char* nombreArch,t_tag *tagOrigen, char *nombreNuevoTag){
+    pthread_mutex_lock(&mutex_diccionario_archivos);
     t_fcb *arch = dictionary_get(diccionario_archivos,nombreArch);
-    t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreArch,arch->tags);
+    pthread_mutex_unlock(&mutex_diccionario_archivos);
+    t_tag *nuevoTag = crear_tag(nombreNuevoTag,arch);
     //list_destroy(nuevoTag->physicalBlocks);
     //REVISAR ESTRUCTURAS ADMINISTRATIVAS PARA TAG Y METADATA
     nuevoTag->tamanio = tagOrigen->tamanio;

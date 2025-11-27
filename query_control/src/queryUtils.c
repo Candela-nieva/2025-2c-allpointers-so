@@ -130,21 +130,21 @@ void recibir_mensaje_exit(int socket_master){
 const char* obtener_motivo_string(t_motivo motivo) {
     switch (motivo) {
         case RESULTADO_OK:                 return "RESULTADO EXITOSO";
-        case ERROR_FILE_INEXISTENTE:       return "FILE_INEXISTENTE";
-        case ERROR_TAG_INEXISTENTE:        return "TAG_INEXISTENTE";
-        case ERROR_FILE_PREEXISTENTE:      return "FILE_YA_EXISTE";
-        case ERROR_TAG_PREEXISTENTE:       return "TAG_YA_EXISTE";
-        case ERROR_LECTURA_NO_PERMITIDA:   return "LECTURA_RECHAZADA_COMMITED";
-        case ERROR_ESCRITURA_NO_PERMITIDA: return "ESCRITURA_RECHAZADA_COMMITED";
-        case ERROR_ESPACIO_INSUFICIENTE:   return "STORAGE_SIN_ESPACIO";
-        case ERROR_FUERA_DE_LIMITE:        return "ACCESO_FUERA_DE_LIMITE";
-        case ERROR_NO_PUDO_ABRIR_ARCHIVO:  return "FALLO_APERTURA_ARCHIVO";
-        case ERROR_LECTURA_FALLIDA:        return "FALLO_LECTURA_FISICA";
-        case ERROR_LINK_FALLIDO:           return "FALLO_CREACION_LINK";
-        case ERROR_PAGE_FAULT:             return "FALLO_PAGE_FAULT";
-        case ERROR_TAMANIO_NO_MULTIPLO:    return "TAMANIO_NO_MULTIPLO";
-        case DESCONEXION_WORKER:           return "WORKER_DESCONECTADO";
-        default:                           return "MOTIVO_DESCONOCIDO";
+        case ERROR_FILETAG_INEXISTENTE:    return "FILE:TAG INEXISTENTE";
+        case ERROR_FILE_PREEXISTENTE:      return "FILE YA EXISTE";
+        case ERROR_TAG_PREEXISTENTE:       return "TAG YA EXISTE";
+        case ERROR_LECTURA_NO_PERMITIDA:   return "LECTURA RECHAZADA COMMITED";
+        case ERROR_ESCRITURA_NO_PERMITIDA: return "ESCRITURA RECHAZADA COMMITED";
+        case ERROR_ESPACIO_INSUFICIENTE:   return "STORAGE SIN ESPACIO";
+        case ERROR_FUERA_DE_LIMITE:        return "ACCESO FUERA DE LIMITE";
+        case ERROR_NO_PUDO_ABRIR_ARCHIVO:  return "FALLO APERTURA ARCHIVO";
+        case ERROR_LECTURA_FALLIDA:        return "FALLO LECTURA FISICA";
+        case ERROR_LINK_FALLIDO:           return "FALLO CREACION LINK";
+        case ERROR_PAGE_FAULT:             return "FALLO PAGE FAULT";
+        case ERROR_TAMANIO_NO_MULTIPLO:    return "TAMANIO NO MULTIPLO";
+        case DESCONEXION_WORKER:           return "WORKER DESCONECTADO";
+        case ERROR_INITIALFILE_DELETE:     return "NO SE PUEDE BORRAR INITIALFILE:BASE";
+        default:                           return "MOTIVO DESCONOCIDO";
     }
 }
 

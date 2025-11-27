@@ -55,8 +55,7 @@ typedef enum {
 
 typedef enum {
     RESULTADO_OK,                 // Éxito. Continúa la Query.
-    ERROR_FILE_INEXISTENTE,       // (File / Tag inexistente)
-    ERROR_TAG_INEXISTENTE,        // (Tag inexistente, para casos específicos como TAG origen)
+    ERROR_FILETAG_INEXISTENTE,    // (File:Tag inexistente, para casos específicos como TAG origen)
     ERROR_FILE_PREEXISTENTE,      // (File / Tag preexistente)
     ERROR_TAG_PREEXISTENTE,       // (Tag preexistente, para casos específicos como TAG destino)
     ERROR_LECTURA_NO_PERMITIDA,   // (Estado COMMITED)
@@ -68,8 +67,9 @@ typedef enum {
     ERROR_LINK_FALLIDO,           // (Fallo al crear el link simbólico)
     ERROR_TAMANIO_NO_MULTIPLO,    // (No es multiplo el tamaño pedido)
     ERROR_PAGE_FAULT,             // (Fallo page fault)
-    ERROR_DESCONOCIDO,
-    DESCONEXION_WORKER
+    ERROR_DESCONOCIDO,            // (DESCONOCIDO)
+    DESCONEXION_WORKER,           
+    ERROR_INITIALFILE_DELETE
 } t_motivo;
 
 void saludar(char* quien);
