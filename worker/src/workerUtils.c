@@ -147,7 +147,8 @@ void esperar_queries(){
                 void* buffer = recibir_buffer(socket_master);
                 pthread_t ejecutar;
                 log_info(loggerWorker, "Se recibio la operacion EJECUTAR");
-                manejar_ejecutar(buffer);
+                pthread_create(&ejecutar, NULL, manejar_ejecutar, buffer);
+                pthread_detach(ejecutar);
                 break;
             case DESALOJO: // Debido al algoritmo utilizado en el Master
                 log_info(loggerWorker, "Master ha indicado DESALOJO de Query actual.");
@@ -169,6 +170,7 @@ void esperar_queries(){
 }
 // DESERIALIZAR EJECUTAR + LLAMADA A EJECUTAR_QUERY
 void* manejar_ejecutar(void *buffer) {
+    atomic_store(&hay_interrupt, 0);
     int offset = 0;
     int qid, pc, tamarch;
     char *archivo;
@@ -286,6 +288,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
         
         // Comprobar interrupción (desalojo)
         if (atomic_load(&hay_interrupt) == 1) {
+            log_info(loggerWorker, "## Query %d: Se Desaloja por pedido del Master"); 
             atomic_store(&hay_interrupt, 0);
 
             for(int i = 0; i < list_size(archivos_abiertos); i++) {

@@ -326,7 +326,7 @@ void atender_QueryControl(int fd){
     pthread_mutex_lock(&mutex_cant_workers);
     log_info(loggerMaster, "## Se conecta un Query Control para ejecutar la Query <%s> con prioridad <%d> - Id asignado: <%d>. Nivel multiprocesamiento <%d>", path_query, prioridad, id_query, cant_workers);
     pthread_mutex_unlock(&mutex_cant_workers);
-    agregar_a_ready(qcb);
+    nuevo_a_ready(qcb);
     sem_post(&replanificar);
 
     while(true){
@@ -376,8 +376,9 @@ void mandar_a_desalojar(t_qcb* qcb) {
     if(worker){
         enviar_operacion(socket,DESALOJO);
         int op = recibir_operacion(socket);
+        //esto podria terminar siendo un case de atender worker 
         if(op != PC_ACTUALIZADO){
-            log_error(loggerMaster, "Error al recibir confirmacion de desalojo del Worker %d para la Query %d", wid, qid);
+            log_error(loggerMaster, "Error al recibir confirmacion de desalojo del Worker %d para la Query %d, se recibio %d", wid, qid, op);
             return;
         }
         void *buffer = recibir_buffer(socket);
@@ -441,7 +442,15 @@ void actualizar_Estado(t_qcb* qcb, t_estado nuevo_estado){
     qcb->estado = nuevo_estado;
     int qid = qcb->qid;
     pthread_mutex_unlock(&(qcb->mutex_qcb));
-    log_info(loggerMaster, "Query ID <%d> cambio de estado de <%d> a <%d>", qid, estado_anterior, nuevo_estado);
+    log_info(loggerMaster, "Query ID <%d> cambio de estado de %s a %s", qid, estado_a_string(estado_anterior), estado_a_string(nuevo_estado));
+}
+
+const char* estado_a_string (t_estado estado) {
+    switch(estado) {
+        case READY:     return "READY";
+        case EXEC:      return "EXEC";
+        case EXIT:      return "EXIT";
+    }
 }
 
 t_qcb* buscar_qcb_por_ID(int qid){
@@ -718,6 +727,10 @@ void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker) {
 //ACTUALICE ESTADOS ACA
 void agregar_a_ready(t_qcb* qcb){
     actualizar_Estado(qcb, READY);
+    nuevo_a_ready(qcb);
+}
+
+void nuevo_a_ready(t_qcb* qcb) {
     pthread_mutex_lock(&mutex_cola_ready);
     list_add(cola_ready, qcb);
     pthread_mutex_unlock(&mutex_cola_ready);
