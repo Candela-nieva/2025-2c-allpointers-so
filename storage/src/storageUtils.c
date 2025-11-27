@@ -26,6 +26,7 @@ t_config* configHash = NULL;
 // SEMAFOROS
 pthread_mutex_t mutex_hash_index;
 pthread_mutex_t mutex_bitmap;
+pthread_mutex_t mutex_diccionario_archivos;
 //==========INICIALIZACION==========
 //prueba
 
@@ -111,20 +112,25 @@ void terminar_programa_storage(int signal) {
     if (config_SB) config_destroy(config_SB);
     if (config_struct) free(config_struct);
     if (config_superBlock) free(config_superBlock);
-
+    pthread_mutex_lock(&mutex_bitmap);
     if(bitarray)
         bitarray_destroy(bitarray);
+    pthread_mutex_unlock(&mutex_bitmap);
+    
+    pthread_mutex_lock(&mutex_hash_index);
     if (mappeo) {
         // Liberar la memoria mapeada
         // Usamos cantBloq/8 porque es el tamaño en bytes
         munmap(mappeo, cantBloq / 8); 
     }
+    pthread_mutex_unlock(&mutex_hash_index);
+    pthread_mutex_lock(&mutex_diccionario_archivos);
     if(diccionario_archivos)
         dictionary_destroy_and_destroy_elements(diccionario_archivos, destruir_fcb_item);
-
+    pthread_mutex_unlock(&mutex_diccionario_archivos);
     pthread_mutex_destroy(&mutex_bitmap);
     pthread_mutex_destroy(&mutex_hash_index);
-
+    pthread_mutex_destroy(&mutex_diccionario_archivos);
     if(loggerStorage) log_destroy(loggerStorage);
 
     exit(0);
@@ -161,6 +167,7 @@ void iniciar_servidor_multihilo(void)
             void *buffer = recibir_buffer(fd_conexion);
             memcpy(&idWorker, buffer,sizeof(int));
             free(buffer);
+            // LOG OBLIGATORIO //
             log_info(loggerStorage, "##Se conecta el Worker <%d> - Cantidad de Workers: <%d>", idWorker,cant_workers);
             
             t_worker *nuevoWorker = registrarWorker(fd_conexion,idWorker);
@@ -194,6 +201,7 @@ void* atender_worker(void* arg){
         log_info(loggerStorage, "##Instruccion recibida %d", inst);
         if(inst == -1) {
             cant_workers--;
+            // LOG OBLIGATORIO //
             log_info(loggerStorage, "##Se desconecta el Worker %d - Cantidad de Workers: %d", worker->ID_Worker, cant_workers);
             darDeBajaWorker(worker);
             return NULL;
@@ -445,6 +453,7 @@ void inicializar_montaje(){
 void inicializar_semaforos() {
     pthread_mutex_init(&mutex_hash_index, NULL);
     pthread_mutex_init(&mutex_bitmap, NULL);
+    pthread_mutex_init(&mutex_diccionario_archivos, NULL);
 }
 
 void cargar_config_hashIndex(){
@@ -516,7 +525,7 @@ void recuperar_estructuras_FS() {
         fcb->tags = dictionary_create();
         dictionary_put(diccionario_archivos, fcb->nombreArch, fcb);
         
-        log_info(loggerStorage, "Recuperado FCB: %s", nombre_archivo);
+        //log_info(loggerStorage, "Recuperado FCB: %s", nombre_archivo);
 
         recuperar_tags_file(nombre_archivo, fcb);
     }
@@ -559,7 +568,7 @@ void recuperar_tags_file(char *nombre_archivo, t_fcb *file){
         //tag->pathTag = pathNuevoTag;
         //log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag);
         //tag->nombreTag = strdup (nombre_tag);
-        log_info(loggerStorage,"Nuevo Nombre Tag = %s", tag->nombreTag);
+        //log_info(loggerStorage,"Nuevo Nombre Tag = %s", tag->nombreTag);
         tag->tamanio = meta->tamanio;
         if (strcmp(meta->estado, "COMMITED") == 0) 
             tag->estado = COMMITED;
@@ -576,8 +585,8 @@ void recuperar_tags_file(char *nombre_archivo, t_fcb *file){
 
         tag->logBlocks = list_size(tag->physicalBlocks); 
         //dictionary_put(file->tags,tag->nombreTag,tag);
-        log_info(loggerStorage, "  -> Recuperado Tag: %s (Size: %d, Blocks: %d)", 
-                nombre_tag, tag->tamanio, tag->logBlocks);
+        //log_info(loggerStorage, "  -> Recuperado Tag: %s (Size: %d, Blocks: %d)", 
+        //        nombre_tag, tag->tamanio, tag->logBlocks);
 
         destruir_metadata(meta);
     }
@@ -714,9 +723,7 @@ void initialFile(){
     escrituraInicial[tam_bloq] = '\0';
     op_write_block("initial_file","BASE", 0,escrituraInicial, 0);
     op_commit("initial_file", "BASE", 0);
-    struct stat st;
-    stat("/home/utnso/storage/physical_blocks/block0000.dat", &st);
-    log_info(loggerStorage,"cant referencias a bloq 0 : %d",st.st_nlink);
+
     
     //char escrituraInicial[tam_bloq + 1];
     //memset(escrituraInicial, '0', (tam_bloq));
@@ -731,23 +738,25 @@ void initialFile(){
 int buscar_bloque_libre(int query_id){
     for(int i = 0; i < cantBloq; i++){
         if(bitarray_test_bit(bitarray, i)==0){
+            // LOG OBLIGATORIO //
             log_info(loggerStorage, "##%d - Bloque Físico Reservado - Número de Bloque: %d", query_id, i);
             marcar_ocupado_en_bitmap(i);
             return i;
         }
             
     }
-    log_info(loggerStorage, "NO SE ENCONTRO BLOQUE LIBRE");
+    log_info(loggerStorage, "##%d - No se encontro un Bloque Físico Libre", query_id);
     return -1;
 }
 
-void marcar_libre_en_bitmap(int nro_fisico) {
+void marcar_libre_en_bitmap(int nro_fisico, int query_id) {
     if (nro_fisico <= 0 || nro_fisico >= cantBloq)
         return;
     bitarray_clean_bit(bitarray, nro_fisico);
     size_t bytes_bitmap = (cantBloq + 7) / 8;
     msync(mappeo, bytes_bitmap, MS_SYNC);
-    log_info(loggerStorage, "## Bloque Físico Liberado - Número de Bloque: %d", nro_fisico);
+    // LOG OBLIGATORIO //
+    log_info(loggerStorage, "##%d - Bloque Físico Liberado - Número de Bloque: %d", query_id, nro_fisico);
 }
 
 void marcar_ocupado_en_bitmap(int nro_fisico) {
@@ -781,7 +790,7 @@ char *obtener_path_bloque_fisico(int nroBloque){
     sprintf(Bloque,"%0*d", anchoEntrada, nroBloque);
     char *pathBloq = malloc(256);
     sprintf(pathBloq, "%s/block%s.dat", path_blocks, Bloque);
-    log_info(loggerStorage, "path del bloque fisico %d : %s",nroBloque,pathBloq);
+    //log_info(loggerStorage, "path del bloque fisico %d : %s",nroBloque,pathBloq);
     return pathBloq;
 }
 
@@ -822,11 +831,12 @@ void eliminar_bloq_log (char* pathTag, int nro) {
 t_motivo op_create(char *nombreArch, char *nombreTag, int query_id){
     usleep(retardo_operacion * 1000);
     if(archRepetido(nombreArch)){
-        log_info(loggerStorage, "Fallo : File preexistente %s:%s", nombreArch, nombreTag);
+        log_info(loggerStorage, "##%d - Fallo : File preexistente %s:%s", query_id,nombreArch, nombreTag);
         return ERROR_FILE_PREEXISTENTE;
     }
     char initial[256];
     crear_directorio(path_files, nombreArch, initial);
+    // LOG OBLIGATORIO //
     log_info(loggerStorage, "##%d - File Creado %s:%s", query_id, nombreArch, nombreTag);
     char tagBase[256];
     crear_directorio(initial, nombreTag, tagBase);
@@ -834,6 +844,7 @@ t_motivo op_create(char *nombreArch, char *nombreTag, int query_id){
     char logicalBlocks[256];
     crear_directorio(tagBase, "logical_blocks", logicalBlocks);
     crear_fcb(nombreArch, nombreTag);
+    // LOG OBLIGATORIO //
     log_info(loggerStorage, "##%d - Tag Creado %s:%s", query_id, nombreArch, nombreTag);
     return RESULTADO_OK;
 }
@@ -848,12 +859,12 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
 
     t_tag* tag = buscar_Tag_Arch(nombreArch, nombreTag);
     if (!tag) {
-        log_info(loggerStorage, "Tag inexistente %s:%s", nombreArch, nombreTag);
+        log_info(loggerStorage, "##%d - Tag inexistente %s:%s", query_id,nombreArch, nombreTag);
         destruir_metadata(meta);
         return ERROR_TAG_INEXISTENTE;
     }
     if (tag->estado == COMMITED) {
-        log_info(loggerStorage, "File:Tag %s:%s ya está COMMITED. No hay cambios", nombreArch, nombreTag);
+        log_info(loggerStorage, "##%d - File:Tag %s:%s ya está COMMITED. No hay cambios", query_id, nombreArch, nombreTag);
         destruir_metadata(meta);
         return ERROR_ESCRITURA_NO_PERMITIDA; 
     }
@@ -874,7 +885,7 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
             int *bloqInicial = malloc(sizeof(int));
             *bloqInicial = 0;
             list_add(tag->physicalBlocks, bloqInicial);
-
+            // LOG OBLIGATORIO //
             log_info(loggerStorage, "##%d - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico 0", query_id, nombreArch, nombreTag, i);
         }
         free(path_block0);
@@ -884,8 +895,9 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
             int *pbloqfis = (int*)list_get(meta->blocks, i);
             int bloque_fisico = *pbloqfis;
 
-            achicarArchivo(meta, tag->pathTag, ancho, i, bloque_fisico);
+            achicarArchivo(meta, tag->pathTag, ancho, i, bloque_fisico, query_id);
             tag->logBlocks--;
+            // LOG OBLIGATORIO //
             log_info(loggerStorage, "##%d - %s:%s Se eliminó el hard link del bloque lógico %06d al bloque físico %d", query_id, nombreArch, nombreTag, i, bloque_fisico);
         }
     }
@@ -894,6 +906,7 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
     meta->tamanio = nuevoTamanio;
     guardar_metadata(meta, nombreArch, nombreTag);
     //esto se tiene que hacer recien en commit ??????????????????????
+    // LOG OBLIGATORIO //
     log_info(loggerStorage, "##%d - File Truncado %s:%s - Tamaño: %d", query_id, nombreArch, nombreTag, nuevoTamanio);
     destruir_metadata(meta);
     return RESULTADO_OK;
@@ -902,7 +915,7 @@ t_motivo op_truncate(char* nombreArch, char *nombreTag, int nuevoTamanio, int qu
 t_motivo agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_block0) {
     char *path_logical = crear_bloq_log(pathTag, meta, nro);
         if (link(path_block0, path_logical) == -1) {
-            log_info(loggerStorage, "Link a block0 falló: %s", strerror(errno));
+            //log_info(loggerStorage, "Link a block0 falló: %s", strerror(errno));
             //destruir_metadata(meta);
             return ERROR_LINK_FALLIDO;
         }
@@ -911,7 +924,7 @@ t_motivo agrandarArchivo (t_metadata* meta, char* pathTag, int nro, char* path_b
 }
 
 
-void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico) {
+void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico, int query_id) {
     
     eliminar_bloq_log(pathTag, nro);
 
@@ -924,7 +937,7 @@ void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bl
     struct stat st;
     if (stat(path_fisico, &st) == 0) {
         if (st.st_nlink <= 1 && bloque_fisico != 0) {
-            marcar_libre_en_bitmap(bloque_fisico);
+            marcar_libre_en_bitmap(bloque_fisico, query_id);
         }
     }
 
@@ -935,8 +948,8 @@ void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bl
 
 t_motivo op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino,char *nombreNuevoTag, int query_id){
     usleep(retardo_operacion  * 1000);
-    log_info(loggerStorage, "Operación TAG de %s:%s a %s:%s", nombreArch, nombreTagOrigen, nombreArchDestino, nombreNuevoTag);
-    log_info(loggerStorage, "buscando file: %s", nombreArchDestino);
+    //log_info(loggerStorage, "Operación TAG de %s:%s a %s:%s", nombreArch, nombreTagOrigen, nombreArchDestino, nombreNuevoTag);
+    //log_info(loggerStorage, "buscando file: %s", nombreArchDestino);
     t_fcb* fcbDestino = dictionary_get(diccionario_archivos, nombreArchDestino);
     if(!fcbDestino){
         return ERROR_FILE_INEXISTENTE;
@@ -945,10 +958,10 @@ t_motivo op_tag(char* nombreArch, char *nombreTagOrigen, char* nombreArchDestino
     if(tagOrigen){
         char pathArch[512];
         sprintf(pathArch,"%s/%s/%s",path_files,nombreArchDestino,nombreNuevoTag);
-        log_info(loggerStorage, "nuevo path : %s",pathArch);
+        //log_info(loggerStorage, "nuevo path : %s",pathArch);
         char cmd[520];
         sprintf(cmd,"cp -r %s %s",tagOrigen->pathTag,pathArch);
-        log_info(loggerStorage, "comando : %s",cmd);
+        //log_info(loggerStorage, "comando : %s",cmd);
         system(cmd);
         crear_copia_tag(nombreArchDestino,tagOrigen,nombreNuevoTag);
         return RESULTADO_OK;
@@ -963,7 +976,7 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
         pthread_mutex_lock(&tag->mutexTag);
         if (tag->estado == COMMITED) {
             pthread_mutex_unlock(&tag->mutexTag);
-            log_info(loggerStorage, "File:Tag %s:%s ya está COMMITED. No hay cambios", nombreArch, nombreTag);
+            log_info(loggerStorage, "##%d - File:Tag %s:%s ya está COMMITED. No hay cambios", query_id,nombreArch, nombreTag);
             return ERROR_ESCRITURA_NO_PERMITIDA; 
         }
         for(int i = 0; i < tag->logBlocks; i++){
@@ -985,19 +998,20 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
                 char *bloqFis = config_get_string_value(configHash, hash);
                 int *nroFis = malloc(sizeof(int));
                 *nroFis = atoi(bloqFis + 5); //bloqFis siempre sera del mismo formato "blockNRO" por lo que a partir del 6to caracter esta el nro Fisico
-                log_info(loggerStorage, "Mismo contenido leido en bloque %d", *nroFis);
+                //log_info(loggerStorage, "Mismo contenido leido en bloque %d", *nroFis);
                 if(bloqActual != *nroFis){
                     list_replace(tag->physicalBlocks, i, nroFis);
                     free(pbloqfis);
                     char*nuevoBloqPath = obtener_path_bloque_fisico(*nroFis);
                     unlink(bloqLogPath);
                     if(link(nuevoBloqPath, bloqLogPath) == -1) {
-                        log_info(loggerStorage, "Fallo al crear link canónico: %s", strerror(errno));
+                        //log_info(loggerStorage, "Fallo al crear link canónico: %s", strerror(errno));
                         free(nuevoBloqPath);
-                    
+                        pthread_mutex_unlock(&mutex_hash_index);
                         return ERROR_LINK_FALLIDO;
                     }
-                    log_info(loggerStorage, "##%d - %s : %s Bloque Lógico %06d se reasigna de %d a %d", query_id, nombreArch, nombreTag, i, bloqActual, *nroFis);
+                    // LOG OBLIGATORIO //
+                    log_info(loggerStorage, "##%d - %s:%s Bloque Lógico %06d se reasigna de %d a %d", query_id, nombreArch, nombreTag, i, bloqActual, *nroFis);
                     liberar_bloque_si_no_referenciado(bloqActual, query_id);
                     free(nuevoBloqPath);
                     
@@ -1048,6 +1062,7 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
 
         guardar_metadata(meta, nombreArch, nombreTag);
         destruir_metadata(meta); //elimina memory leak?
+        // LOG OBLIGATORIO //
         log_info(loggerStorage, "##%d - Commit de File:Tag %s:%s", query_id, nombreArch, nombreTag);
         
         pthread_mutex_unlock(&tag->mutexTag);
@@ -1083,7 +1098,6 @@ char* leer_contenido_bloque(char* path_bloque_logico) {
         // Rellenamos el resto del buffer con ceros
         memset(contenido + bytes_leidos, 0, tam_bloq - bytes_leidos);
     }
-    log_info(loggerStorage, "Leimos este contenido: %s", contenido);
     return contenido;
 }
 
@@ -1094,7 +1108,7 @@ void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id) {
         // Si es <= 1, SÓLO el archivo físico en physical_blocks lo referencia (o ya fue eliminado).
         if (st.st_nlink <= 1) { 
             pthread_mutex_lock(&mutex_bitmap);
-            marcar_libre_en_bitmap(bloque_fisico);
+            marcar_libre_en_bitmap(bloque_fisico, query_id);
             pthread_mutex_unlock(&mutex_bitmap);
             
             //OPCIONAL: Podríamos no crear todos los bloques fisicos
@@ -1111,27 +1125,25 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
     usleep(retardo_operacion  * 1000);
     t_tag *tag = buscar_Tag_Arch(nombreArch,nombreTag);
     if (!tag) {
-        log_info(loggerStorage, "Tag inexistente %s:%s", nombreArch, nombreTag);
+        log_info(loggerStorage, "##%d - Tag inexistente %s:%s", query_id, nombreArch, nombreTag);
         return ERROR_TAG_INEXISTENTE;
     }
     if(nroBloque > tag->logBlocks){
-        log_info(loggerStorage, "Fallo : Escritura fuera de rango %s:%s", nombreArch, nombreTag);
+        log_info(loggerStorage, "##%d - Fallo : Escritura fuera de rango %s:%s", query_id, nombreArch, nombreTag);
         return ERROR_FUERA_DE_LIMITE;
     }
     if(tag->estado != COMMITED) {
-        //int bloqLog = direccBase / tam_bloq;
-        //int offset = direccBase % tam_bloq;
-        log_info(loggerStorage, "## BLOQ LOGICO A ESCRIBIR %d", nroBloque);
+        //log_info(loggerStorage, "## BLOQ LOGICO A ESCRIBIR %d", nroBloque);
         pthread_mutex_lock(&tag->mutexTag);
-        //int bloqFis = list_get(tag->physicalBlocks, nroBloque); //MANEJAR CASTEO
+        
         int *bloqActual = (int*)list_get(tag->physicalBlocks, nroBloque);            
         int bloqFis = *bloqActual;
         pthread_mutex_unlock(&tag->mutexTag);
 
-        log_info(loggerStorage, "## LE CORRESPONDE EL BLOQFIS %d", nroBloque);
+        //log_info(loggerStorage, "## LE CORRESPONDE EL BLOQFIS %d", nroBloque);
         char *pathBloqFis = obtener_path_bloque_fisico(bloqFis);
         char *pathBloqLog = obtener_path_bloq_logico(tag, nroBloque);
-        log_info(loggerStorage, "## SE ESCRIBE SOBRE EL bloqLog %s", pathBloqLog);
+        //log_info(loggerStorage, "## SE ESCRIBE SOBRE EL bloqLog %s", pathBloqLog);
             //buscar bloque fisico al que esta asociado el link del bloque logico
         struct stat st;
         if (stat(pathBloqFis, &st) == 0) {
@@ -1139,17 +1151,17 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                 //marcar_libre_en_bitmap(bloque_fisico);
                 FILE *bloqL = fopen(pathBloqLog, "r+");
                 if(!bloqL){
-                    log_info(loggerStorage, "Error al abrir el bloque lógico '%s' ", pathBloqLog);
+                    log_info(loggerStorage, "##%d - Error al abrir el bloque lógico '%s' ", query_id,pathBloqLog);
                     free(pathBloqLog);
                     free(pathBloqFis);
                     return ERROR_NO_PUDO_ABRIR_ARCHIVO;
                 }
-                //fseek(bloqL, offset, SEEK_SET);
                 fwrite(contenido, 1, tam_bloq, bloqL);
                 fclose(bloqL);
                 free(pathBloqFis);
                 free(pathBloqLog);
-                log_info(loggerStorage, "Se escribio %s", contenido);
+                // LOG OBLIGATORIO //
+                log_info(loggerStorage, "##%d - Bloque Lógico Escrito %s:%s - Número de Bloque: %d",query_id, nombreArch, nombreTag, nroBloque);
                 return RESULTADO_OK;
             }else{
                 unlink(pathBloqLog);
@@ -1170,6 +1182,7 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
                     free(nuevoPathBloqFis);
                     return ERROR_LINK_FALLIDO;
                 }
+                // LOG OBLIGATORIO //
                 log_info(loggerStorage, "##%d - %s:%s Se agregó el hard link del bloque lógico %06d al bloque físico %06d", query_id, nombreArch, nombreTag, nroBloque, *nuevoBloqFis);
                 usleep(retardo_acceso_bloque  * 1000);
                 FILE *bloqL = fopen(pathBloqLog, "r+");
@@ -1191,12 +1204,13 @@ t_motivo op_write_block(char* nombreArch, char *nombreTag, int nroBloque, void *
             }
             
         } else {
-            log_info(loggerStorage, "File:Tag %s:%s ya está COMMITED. No hay cambios", nombreArch, nombreTag);
+            log_info(loggerStorage, "##%d - File:Tag %s:%s ya está COMMITED. No hay cambios", query_id ,nombreArch, nombreTag);
             free(pathBloqLog);
             free(pathBloqFis);
             return ERROR_ESCRITURA_NO_PERMITIDA; 
         }
     }
+    log_info(loggerStorage, "##%d - Bloque Lógico Escrito %s:%s - Número de Bloque: %d",query_id, nombreArch, nombreTag, nroBloque);
     return RESULTADO_OK; //tendria que ir aca el return
 }
 
@@ -1206,12 +1220,13 @@ t_motivo op_read_block(char* nombreArch, char *nombreTag, int nroBloque, char **
     
     char *pathBloq = obtener_path_bloq_logico(tag,nroBloque);
     if(nroBloque >= tag->logBlocks || nroBloque < 0){
-        log_info(loggerStorage, "Fallo : Lectura fuera de rango %s:%s", nombreArch, nombreTag);
+        log_info(loggerStorage, "##%d - Fallo : Lectura fuera de rango %s:%s", query_id,nombreArch, nombreTag);
         free(pathBloq);
         return ERROR_FUERA_DE_LIMITE;
     }
     if((*contenido = leer_contenido_bloque(pathBloq)) != NULL){
-        log_info(loggerStorage, "##%d - Bloque Lógico Leído <%s>:<%s> - Número de Bloque: %d", query_id, nombreArch, nombreTag, nroBloque);
+        // LOG OBLIGATORIO //
+        log_info(loggerStorage, "##%d - Bloque Lógico Leído %s:%s - Número de Bloque: %d", query_id, nombreArch, nombreTag, nroBloque);
         free(pathBloq);
         return RESULTADO_OK;
     }else{
@@ -1232,12 +1247,14 @@ t_motivo op_delete_tag(char* nombreArch, char *nombreTag, int query_id){
         //int bloqFis = list_get(tag->physicalBlocks,i);
         liberar_bloque_si_no_referenciado(bloqFis, query_id);
     }
-    log_info(loggerStorage, "Path a borrar : %s",tag->pathTag);
+    //log_info(loggerStorage, "Path a borrar : %s",tag->pathTag);
     char cmd[256];
     sprintf(cmd,"rm -rf %s",tag->pathTag);
-    log_info(loggerStorage, "comando : %s",cmd);
+    //log_info(loggerStorage, "comando : %s",cmd);
     system(cmd);
     eliminarStructTag(nombreArch, nombreTag);
+    // LOG OBLIGATORIO //
+    log_info(loggerStorage, "“##%d - Tag Eliminado %s:%s", query_id, nombreArch, nombreTag);
     return RESULTADO_OK;
 }
 
@@ -1250,7 +1267,7 @@ t_fcb *crear_fcb(char *nombreNuevoArch, char *nombreNuevoTag){
     t_tag *nuevoTag = crear_tag(nombreNuevoTag,nombreNuevoArch, fcb->tags);
     nuevoTag->physicalBlocks = list_create();
     dictionary_put(diccionario_archivos,fcb->nombreArch,fcb);
-    log_info(loggerStorage, "FILE:TAG = %s:%s", fcb->nombreArch, nuevoTag->nombreTag);
+    log_info(loggerStorage, "%s:%s : Registrado", fcb->nombreArch, nuevoTag->nombreTag);
     return fcb;
 }
 
@@ -1259,9 +1276,9 @@ t_tag *crear_tag(char *nombreNuevoTag, char *nombreArch,t_dictionary *diccionari
     char *pathNuevoTag = malloc(256); 
     sprintf(pathNuevoTag, "%s/%s/%s", path_files, nombreArch, nombreNuevoTag);
     tag->pathTag = pathNuevoTag;
-    log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag);
+    //log_info(loggerStorage,"Nuevo Path Tag = %s", tag->pathTag);
     tag->nombreTag = strdup (nombreNuevoTag);
-    log_info(loggerStorage,"Nuevo Nombre Tag = %s", tag->nombreTag);
+    //log_info(loggerStorage,"Nuevo Nombre Tag = %s", tag->nombreTag);
     //tag->nombreTag = nombreNuevoTag;
     tag->tamanio = 0;
     //tag->physicalBlocks = list_create();
@@ -1279,7 +1296,7 @@ t_tag *buscar_Tag_Arch(char *Arch, char *Tag){
         return NULL;
     }
     t_tag *tag = dictionary_get(fcb->tags, Tag);
-    log_info(loggerStorage, "Enviaron %s:%s, encontramos %s:%s", Arch, Tag, fcb->nombreArch, tag->nombreTag);
+    //log_info(loggerStorage, "Enviaron %s:%s, encontramos %s:%s", Arch, Tag, fcb->nombreArch, tag->nombreTag);
     return tag;
 }
 
@@ -1306,7 +1323,7 @@ void eliminarStructTag(char* nombreArch, char *nombreTag){
     t_fcb *fcb = dictionary_get(diccionario_archivos,nombreArch);
     t_tag *tag = dictionary_remove(fcb->tags,nombreTag);
     if(tag != NULL) {
-        log_info(loggerStorage, "Se eliminara %s:%s", nombreArch, tag->nombreTag);
+        //log_info(loggerStorage, "Se eliminara %s:%s", nombreArch, tag->nombreTag);
         destruir_tag_item(tag);
     }
 }

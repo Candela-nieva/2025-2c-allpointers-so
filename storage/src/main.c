@@ -1,9 +1,9 @@
 #include "storageUtils.h"
 
 int main(int argc, char* argv[]) {
-    saludar("storage");
+    //saludar("storage");
     config_storage = "storage.config";
-    signal(SIGINT, terminar_programa_storage);
+    //signal(SIGINT, terminar_programa_storage);
 
     inicializar_config();
     cargar_config();

@@ -52,7 +52,7 @@ int crear_servidor(char* puerto) {
 //Función que espera y acepta una conexión de un cliente
 int esperar_cliente (int fd_escucha, char* cliente_nombre, t_log* logger) {
     int fd_conexion = accept(fd_escucha, NULL, NULL);
-    log_info(logger, "Se conecto %s!", cliente_nombre);
+    //log_info(logger, "Se conecto %s!", cliente_nombre);
     //enviarHandshake (fd_conexion);
     return fd_conexion;
 }

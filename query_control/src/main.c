@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
     //char* path_query = argv[2];
     //int prioridad = atoi(argv[3]);
 
-    saludar("query_control");
+    //saludar("query_control");
     inicializar_config();
     cargar_config();
     crear_logger();

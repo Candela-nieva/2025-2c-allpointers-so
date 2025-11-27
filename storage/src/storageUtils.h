@@ -118,7 +118,7 @@ void recargar_bitmap();
 //==========BITMAP==========
 int buscar_bloque_libre(int query_id);
 char *obtener_path_bloque_fisico(int nroBloque);
-void marcar_libre_en_bitmap(int nro_fisico);
+void marcar_libre_en_bitmap(int nro_fisico, int query_id);
 void marcar_ocupado_en_bitmap(int nro_fisico);
 //==========FORMATO DE ENTRADAS==========
 int calcularAncho();
@@ -135,7 +135,7 @@ void destruir_metadata(t_metadata* meta);
 t_metadata* leer_metadata(char* archivo, char* nombreTag);
 void guardar_metadata(t_metadata* meta, char* archivo, char* nombreTag);
 t_motivo agrandarArchivo(t_metadata* meta, char* pathTag, int nro, char* path_block0);
-void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico);
+void achicarArchivo (t_metadata* meta, char* pathTag, int ancho, int nro, int bloque_fisico, int query_id);
 char* leer_contenido_bloque(char* path_bloque_logico);
 void liberar_bloque_si_no_referenciado(int bloque_fisico, int query_id);
 //============================= FCB Y TAGS ==================================

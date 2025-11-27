@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
 
     //config_worker = argv[1];
     //int worker_id = atoi(argv[2]);
-    saludar("worker");
+    //saludar("worker");
 
     inicializar_config();
     cargar_config();
