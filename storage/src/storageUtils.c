@@ -433,9 +433,10 @@ int recibir_QID_nombreArch_nombreTag(void* buffer, int* QID, char** nombreArch,c
 void inicializar_montaje(){
     diccionario_archivos = dictionary_create();
     inicializar_semaforos();
-    cargar_config_hashIndex();
     cargar_config_superBlock();
     freshStart();
+    cargar_config_hashIndex();
+    
     if(fresh_start)
         initialFile();
     log_info(loggerStorage, "SE ABRIO EL DIRECTORIO RAIZ : FS SIZE = %d ; BLOCK SIZE = %d",fs_size,tam_bloq);
@@ -463,7 +464,7 @@ void cargar_config_superBlock(){
     config_superBlock->tam_bloq = config_get_string_value(config_SB, "BLOCK_SIZE");
     
     fs_size = atoi(config_superBlock->fs_size);
-        printf("llegamos a despues");
+    
 
     tam_bloq = atoi(config_superBlock->tam_bloq);
     cantBloq = fs_size / tam_bloq; //al ser un bitmap, cada entrada es de 1 bit, por lo que el tamanio es igual a cantBloques bits
@@ -708,7 +709,15 @@ void crear_physical_blocks() {
 void initialFile(){
     op_create("initial_file","BASE", 0);
     op_truncate("initial_file","BASE", tam_bloq, 0);
+    char escrituraInicial[tam_bloq + 1];
+    memset(escrituraInicial, '0', (tam_bloq));
+    escrituraInicial[tam_bloq] = '\0';
+    op_write_block("initial_file","BASE", 0,escrituraInicial, 0);
     op_commit("initial_file", "BASE", 0);
+    struct stat st;
+    stat("/home/utnso/storage/physical_blocks/block0000.dat", &st);
+    log_info(loggerStorage,"cant referencias a bloq 0 : %d",st.st_nlink);
+    
     //char escrituraInicial[tam_bloq + 1];
     //memset(escrituraInicial, '0', (tam_bloq));
     //escrituraInicial[tam_bloq] = '\0';
@@ -976,6 +985,7 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
                 char *bloqFis = config_get_string_value(configHash, hash);
                 int *nroFis = malloc(sizeof(int));
                 *nroFis = atoi(bloqFis + 5); //bloqFis siempre sera del mismo formato "blockNRO" por lo que a partir del 6to caracter esta el nro Fisico
+                log_info(loggerStorage, "Mismo contenido leido en bloque %d", *nroFis);
                 if(bloqActual != *nroFis){
                     list_replace(tag->physicalBlocks, i, nroFis);
                     free(pbloqfis);
@@ -1013,6 +1023,7 @@ t_motivo op_commit(char* nombreArch, char *nombreTag, int query_id){
                 } else {
                     log_error(loggerStorage, "Fallo al abrir blocks_hash_index.config en modo append");
                 }
+                cargar_config_hashIndex();
             }
             pthread_mutex_unlock(&mutex_hash_index);
             free(bloqLogPath);
