@@ -615,7 +615,7 @@ void manejar_page_fault(char* file_tag, t_pagina* paginaAusente, int qid, t_moti
                 *motivo = enviar_bloque_a_storage(qid, file_tag_victima, marco_victima->pagina_logica, contenido_victima);
                 if (*motivo != RESULTADO_OK) {
                     log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, *motivo);
-                    //pthread_mutex_unlock(&mutex_tablas_paginas);
+                    pthread_mutex_unlock(&mutex_tablas_paginas);
                     free(copia_tag);
                     return NULL; // Error al guardar la víctima
                 }
@@ -1252,8 +1252,9 @@ int reemplazo_clock_modificado(int qid) {
     //while (iter < 2 * cantidad_marcos) --> Recorremos hasta 2 * cantidad_marcos iteraciones como tope (puse un ejemplo como tope)
     while (true) {
         int idx = memoria.puntero_clock;
+        pthread_mutex_lock(&memoria.mutex);
         t_marco* m = &memoria.marcos[idx];
-
+        pthread_mutex_unlock(&memoria.mutex);
         if (!m->ocupado) {
             victima = idx;
             break;
@@ -1315,17 +1316,17 @@ int reemplazo_clock_modificado(int qid) {
     memoria.puntero_clock = (victima + 1) % memoria.cant_marcos; // avanzo el puntero clock
 
     // Log: obtener info de la página seleccionada para el log
+    pthread_mutex_lock(&memoria.mutex);
     t_marco* marco_victima = &memoria.marcos[victima];
+    pthread_mutex_unlock(&memoria.mutex);
 
     pthread_mutex_lock(&mutex_tablas_paginas);
     t_tabla_paginas* tabla_victima = dictionary_get(tablas_de_paginas, marco_victima->file_tag);
-
     t_pagina* pagina_victima = (tabla_victima ? buscar_o_crear_pagina(tabla_victima, marco_victima->pagina_logica) : NULL);
     int uso_log = pagina_victima ? pagina_victima->uso : -1;
     int mod_log = pagina_victima ? pagina_victima->modificado : -1;
     pthread_mutex_unlock(&mutex_tablas_paginas);
  
-
     log_info(loggerWorker, "Query %d: CLOCK-M selecciono marco victima: %d (U=%d, M=%d)",
             qid, victima, uso_log, mod_log);
 
@@ -1341,7 +1342,9 @@ int reemplazo_lru(int qid) {
     int victima = -1;
 
     for(int i = 0; i < memoria.cant_marcos; i++) {
+        pthread_mutex_lock(&memoria.mutex);
         t_marco* m = &memoria.marcos[i];
+        pthread_mutex_unlock(&memoria.mutex);
         // Bloque libre --> lo usamos directamente
         if(!m->ocupado){
             victima = i;
@@ -1383,10 +1386,12 @@ void liberar_elemento_tabla(void* elemento) {
 }
 
 void liberar_tablas_paginas() {
+ 
     if(tablas_de_paginas) {
         dictionary_destroy_and_destroy_elements(tablas_de_paginas, liberar_elemento_tabla);
         tablas_de_paginas = NULL;
     }
+
     pthread_mutex_destroy(&mutex_tablas_paginas);
 }
 
