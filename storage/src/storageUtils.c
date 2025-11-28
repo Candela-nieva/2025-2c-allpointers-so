@@ -313,6 +313,7 @@ void atenderTag(int fd_conexion, void* buffer){
     free(buffer);
     //enviar_operacion(fd_conexion, resultado); 
     t_motivo resultado = op_tag(nombreArch, nombreTag, archDestino,nombreNuevoTag,QID);
+    log_info(loggerStorage, "mandado resultado Tag : %d", resultado);
     enviar_operacion(fd_conexion,resultado);
     if(archDestino)
         free(archDestino);
@@ -384,7 +385,7 @@ void atenderRead(int fd_conexion, void* buffer){
         enviar_paquete(paquete, fd_conexion);
         eliminar_paquete(paquete);
     } else {
-        enviar_paquete(paquete, fd_conexion);
+        enviar_operacion(fd_conexion, resultado);
         eliminar_paquete(paquete);
     }
     
