@@ -716,7 +716,7 @@ void* hilo_aging(void* arg){
             pthread_mutex_unlock(&(qcb->mutex_qcb));
             break;
         }
-        int prioridadAntes = qcb->prioridad
+        int prioridadAntes = qcb->prioridad;
         qcb->prioridad -= 1;
         log_info(loggerMaster, "##%d Cambio de prioridad: %d - %d", qcb->qid, prioridadAntes, qcb->prioridad);
         pthread_mutex_unlock(&(qcb->mutex_qcb));
