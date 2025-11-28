@@ -218,13 +218,14 @@ void atender_Worker(int fd){
                 //log_info(loggerMaster, "WORKER <%d>, PC Acualizado %d", id_worker, pc_actualizado);
                 pthread_mutex_lock(&(wcb->mutex_wcb));
                 t_qcb* qcbDesaloj = buscar_qcb_por_ID(wcb->qid_asig);
-                pthread_mutex_lock(&(qcbDesaloj->mutex_qcb));
-                qcbDesaloj->pc = pc_actualizado;
-                pthread_mutex_unlock(&(qcbDesaloj->mutex_qcb));
                 int wid = wcb->wid;
                 wcb->qid_asig = -1;
                 wcb->esta_libre = true;
                 pthread_mutex_unlock(&(wcb->mutex_wcb));
+
+                pthread_mutex_lock(&(qcbDesaloj->mutex_qcb));
+                qcbDesaloj->pc = pc_actualizado;
+                pthread_mutex_unlock(&(qcbDesaloj->mutex_qcb));
 
                 sem_post(&(wcb->sem_desalojo));
 
@@ -372,27 +373,26 @@ void atender_QueryControl(int fd){
     while(true){
         op_code op = recibir_operacion(fd);
         if(op == -1) {
-            pthread_mutex_lock(&(qcb->mutex_qcb));
             pthread_mutex_lock(&mutex_cant_workers); // LOG OBLIGATORIO //
             log_info(loggerMaster, "## Se desconecta un Query Control. Se finaliza la Query <%d> con prioridad <%d>. Nivel multiprocesamiento <%d>", qcb->qid, qcb->prioridad, cant_workers);
             pthread_mutex_unlock(&mutex_cant_workers);
+            pthread_mutex_lock(&(qcb->mutex_qcb)); // Bloqueas para leer estado
+            t_estado estado_actual = qcb->estado;  // Copias el estado
+            pthread_mutex_unlock(&(qcb->mutex_qcb));
                 switch(qcb->estado) {
                     case READY:
                         //actualizar_Estado(qcb, EXIT);
                         remover_qcb_cola(qcb->qid,cola_ready,&mutex_cola_ready);
-                        pthread_mutex_unlock(&(qcb->mutex_qcb));
                         agregar_a_exit(qcb);
                         sem_post(&hay_en_Exit);
                         return;
                     case EXEC:
                         remover_qcb_cola(qcb->qid,cola_exec,&mutex_cola_exec);
                         mandar_a_desalojar(qcb);
-                        pthread_mutex_unlock(&(qcb->mutex_qcb));
                         agregar_a_exit(qcb);
                         sem_post(&hay_en_Exit);
                         return;
                     default:
-                        pthread_mutex_unlock(&(qcb->mutex_qcb));
                         return;
             }
         }else{
@@ -565,7 +565,6 @@ t_wcb *buscar_worker_libre(){
                 pthread_mutex_unlock(&(candidato->mutex_wcb));
             }
         }
-        
     }
     pthread_mutex_unlock(&mutex_workers);
     return NULL;
@@ -579,7 +578,10 @@ t_wcb* buscar_wcb_menor_prio() {
 
     for(int i = 1; i < list_size(lista_workers); i++){
         t_wcb* wcb_actual = list_get(lista_workers,i);
-        t_qcb* qcb_actual = buscar_qcb_por_ID(wcb_actual->qid_asig);
+        pthread_mutex_lock(&(wcb_actual->mutex_wcb));
+        int qid_actual = wcb_actual->qid_asig;
+        pthread_mutex_unlock(&(wcb_actual->mutex_wcb));
+        t_qcb* qcb_actual = buscar_qcb_por_ID(qid_actual);
         if(qcb_actual) {
             pthread_mutex_lock(&(qcb_actual->mutex_qcb));
             if(qcb_prio->prioridad < qcb_actual->prioridad){
@@ -675,21 +677,20 @@ void planificador_prioridades(){
                     mandar_a_ejecutar(qcb_exec, wcb_elegido);
                 }else{
                     wcb_elegido = buscar_wcb_menor_prio();
-                    pthread_mutex_lock(&(wcb_elegido->mutex_wcb));
-                    t_qcb *qcb_actual = buscar_qcb_por_ID(wcb_elegido->qid_asig);
+                    pthread_mutex_lock(&(wcb_elegido->mutex_wcb)); 
+                    int wid = wcb_elegido->wid;
+                    int qid_actual = wcb_elegido->qid_asig;
                     pthread_mutex_unlock(&(wcb_elegido->mutex_wcb));
+                    t_qcb *qcb_actual = buscar_qcb_por_ID(qid_actual);
                     pthread_mutex_lock(&(qcb_exec->mutex_qcb));
                     pthread_mutex_lock(&(qcb_actual->mutex_qcb));
                     if(qcb_exec->prioridad < qcb_actual->prioridad){
-                        int qid_actual = qcb_actual->qid;
-                        pthread_mutex_lock(&(wcb_elegido->mutex_wcb)); // LOG OBLIGATORIO
-                        log_info(loggerMaster, "## Se desaloja la Query <%d> (<%d>) del Worker <%d> - Motivo: PRIORIDAD", qcb_actual->qid, qcb_actual->prioridad, wcb_elegido->wid);
-                        pthread_mutex_unlock(&(wcb_elegido->mutex_wcb));
+                        // LOG OBLIGATORIO
+                        log_info(loggerMaster, "## Se desaloja la Query <%d> (<%d>) del Worker <%d> - Motivo: PRIORIDAD", qcb_actual->qid, qcb_actual->prioridad, wid);
                         pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
+                        pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
                         mandar_a_desalojar(qcb_actual);
                         remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
-
-                        //sem_wait(&termino_desalojo);
 
                         //log_info(loggerMaster, "REMUEVO DE COLA READY");
                         //remover_qcb_cola(qid_exec, cola_ready, &mutex_cola_ready);
@@ -698,9 +699,11 @@ void planificador_prioridades(){
                         //log_info(loggerMaster, "MANDO A EJECUTAR");
                         //mandar_a_ejecutar(qcb_exec, wcb_elegido);
                         agregar_a_ready(qcb_actual);
+                    } else {
+                        pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
+                        pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
                     }
-                    pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
-                    pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
+                    
                 }
             }else{
                 pthread_mutex_unlock(&mutex_cant_workers);
@@ -772,6 +775,7 @@ void nuevo_a_ready(t_qcb* qcb) {
         pthread_detach(hilo_age);
     }
 }
+
 void agregar_a_exec(t_qcb* qcb){
     actualizar_Estado(qcb, EXEC);
     pthread_mutex_lock(&mutex_cola_exec);
@@ -789,9 +793,9 @@ void remover_qcb_cola(int qid, t_list *cola, pthread_mutex_t* mutexCola){
     pthread_mutex_lock(mutexCola);
     for(int i = 0; i < list_size(cola); i++){
         t_qcb *candidato = list_get(cola,i);
-        pthread_mutex_lock(&(candidato->mutex_qcb));
+        //pthread_mutex_lock(&(candidato->mutex_qcb));
         if(candidato->qid == qid){
-            pthread_mutex_unlock(&(candidato->mutex_qcb));
+         // pthread_mutex_unlock(&(candidato->mutex_qcb));
             list_remove(cola,i);
             pthread_mutex_unlock(mutexCola);
             return;
