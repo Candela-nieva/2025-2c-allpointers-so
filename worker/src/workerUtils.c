@@ -1265,12 +1265,12 @@ int reemplazo_clock_modificado(int qid) {
 
         } else {
             // obtengo la entrada de pagina correspondiente
-           
             pthread_mutex_lock(&mutex_tablas_paginas);
             t_tabla_paginas* tabla = dictionary_get(tablas_de_paginas, m->file_tag);
+            pthread_mutex_unlock(&mutex_tablas_paginas);
             t_pagina* pte = NULL;
             if (tabla) pte = buscar_o_crear_pagina(tabla, m->pagina_logica);
-
+            pthread_mutex_lock(&mutex_tablas_paginas);
             // si no hay PTE (raro), lo tratamos como candidato
             bool uso = false, mod = false;
             if (pte) { uso = pte->uso; mod = pte->modificado; }
@@ -1326,7 +1326,9 @@ int reemplazo_clock_modificado(int qid) {
 
     pthread_mutex_lock(&mutex_tablas_paginas);
     t_tabla_paginas* tabla_victima = dictionary_get(tablas_de_paginas, marco_victima->file_tag);
+    pthread_mutex_unlock(&mutex_tablas_paginas);
     t_pagina* pagina_victima = (tabla_victima ? buscar_o_crear_pagina(tabla_victima, marco_victima->pagina_logica) : NULL);
+    pthread_mutex_lock(&mutex_tablas_paginas);
     int uso_log = pagina_victima ? pagina_victima->uso : -1;
     int mod_log = pagina_victima ? pagina_victima->modificado : -1;
     pthread_mutex_unlock(&mutex_tablas_paginas);
