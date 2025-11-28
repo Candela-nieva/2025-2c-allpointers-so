@@ -711,10 +711,6 @@ void planificador_prioridades(){
                             //log_info(loggerMaster, "MANDO A EJECUTAR");
                             //mandar_a_ejecutar(qcb_exec, wcb_elegido);
                             agregar_a_ready(qcb_actual);
-                        } else {
-                            pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
-                            pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
-                        }
                     }
                     
                 }
