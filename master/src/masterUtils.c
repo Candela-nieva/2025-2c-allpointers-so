@@ -704,13 +704,28 @@ void planificador_prioridades(){
                             mandar_a_desalojar(qcb_actual);
                             remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
 
+                            pthread_mutex_lock(&(qcb_actual->mutex_qcb));
+                            bool sigue_viva = (qcb_actual->estado != EXIT); 
+                            pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
+
+                            if(sigue_viva) {
+                                // Camino Feliz: Fue un desalojo normal
+                                remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
+                                agregar_a_ready(qcb_actual);
+                            } else {
+                                // Camino Triste: La query terminó sola. No hacemos nada.
+                                // El hilo atender_Worker ya se encargó de moverla a Exit y liberar el Worker.
+                                log_info(loggerMaster, "La Query <%d> terminó su ejecución durante el intento de desalojo. No se mueve a Ready.", qid_actual);
+                            }
                             //log_info(loggerMaster, "REMUEVO DE COLA READY");
                             //remover_qcb_cola(qid_exec, cola_ready, &mutex_cola_ready);
                             //log_info(loggerMaster, "AGREGO A EXEC");
                             ///agregar_a_exec(qcb_exec);
                             //log_info(loggerMaster, "MANDO A EJECUTAR");
                             //mandar_a_ejecutar(qcb_exec, wcb_elegido);
-                            agregar_a_ready(qcb_actual);
+                            
+                            // COMENTE ESTO!!!!!!!!!!!
+                            //agregar_a_ready(qcb_actual);
                     }
                     
                 }
