@@ -703,7 +703,6 @@ void planificador_prioridades(){
                             log_info(loggerMaster, "## Se desaloja la Query <%d> (<%d>) del Worker <%d> - Motivo: PRIORIDAD", qid_actual, prio_exec, wid);
                             mandar_a_desalojar(qcb_actual);
                             
-
                             pthread_mutex_lock(&(qcb_actual->mutex_qcb));
                             bool sigue_viva = (qcb_actual->estado != EXIT); 
                             pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
@@ -727,8 +726,8 @@ void planificador_prioridades(){
                             // COMENTE ESTO!!!!!!!!!!!
                             //remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
                             //agregar_a_ready(qcb_actual);
+                        }
                     }
-                    
                 }
             }
         }else{
