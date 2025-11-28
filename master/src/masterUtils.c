@@ -375,7 +375,6 @@ void atender_QueryControl(int fd){
                         pthread_mutex_unlock(&(qcb->mutex_qcb));
                         agregar_a_exit(qcb);
                         sem_post(&hay_en_Exit);
-                        
                         return;
                     case EXEC:
                         log_info(loggerMaster, "## Query Control ID <%d> se desconecto en estado EXEC", id_query);
