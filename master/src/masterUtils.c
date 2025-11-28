@@ -795,12 +795,12 @@ void remover_qcb_cola(int qid, t_list *cola, pthread_mutex_t* mutexCola){
         t_qcb *candidato = list_get(cola,i);
         //pthread_mutex_lock(&(candidato->mutex_qcb));
         if(candidato->qid == qid){
-         // pthread_mutex_unlock(&(candidato->mutex_qcb));
+        //pthread_mutex_unlock(&(candidato->mutex_qcb));
             list_remove(cola,i);
             pthread_mutex_unlock(mutexCola);
             return;
         }
-        pthread_mutex_unlock(&(candidato->mutex_qcb));
+        //pthread_mutex_unlock(&(candidato->mutex_qcb));
     }
     pthread_mutex_unlock(mutexCola);
     log_info(loggerMaster, "No se encontro el qid %d en la cola a remover", qid);
