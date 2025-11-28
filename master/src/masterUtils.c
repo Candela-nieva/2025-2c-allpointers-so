@@ -419,7 +419,7 @@ void mandar_a_desalojar(t_qcb* qcb) {
         sem_wait(&(worker->sem_desalojo));
         
         remover_qcb_cola(qid, cola_exec, &mutex_cola_exec);
-        agregar_a_ready(qcb_confirm);
+        agregar_a_ready(qcb);
 
         // Avisamos al planificador que hay trabajo para replanificar
         if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
@@ -565,10 +565,17 @@ t_wcb *buscar_worker_libre(){
     pthread_mutex_lock(&mutex_workers);
     for(int i = 0; i < list_size(lista_workers); i++){
         t_wcb *candidato = list_get(lista_workers, i);
-        if(candidato->esta_libre){
-            pthread_mutex_unlock(&mutex_workers);
-            return candidato;
+        if(candidato) {
+            pthread_mutex_lock(&(candidato->mutex_wcb));
+            if(candidato->esta_libre){
+                pthread_mutex_unlock(&(candidato->mutex_wcb));
+                pthread_mutex_unlock(&mutex_workers);
+                return candidato;
+            } else {
+                pthread_mutex_unlock(&(candidato->mutex_wcb));
+            }
         }
+        
     }
     pthread_mutex_unlock(&mutex_workers);
     return NULL;
