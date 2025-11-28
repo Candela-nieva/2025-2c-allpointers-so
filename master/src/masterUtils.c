@@ -417,6 +417,16 @@ void mandar_a_desalojar(t_qcb* qcb) {
         enviar_operacion(socket, DESALOJO);
         pthread_mutex_unlock(&(worker->mutex_socket));
         sem_wait(&(worker->sem_desalojo));
+        
+        remover_qcb_cola(qid, cola_exec, &mutex_cola_exec);
+        agregar_a_ready(qcb_confirm);
+
+        // Avisamos al planificador que hay trabajo para replanificar
+        if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
+            sem_post(&hay_worker_libre);
+        } else {
+            sem_post(&replanificar);
+        }
         return;
     } else {
         log_info(loggerMaster, "NO SE ENCONTRO a worker del Query <%d>", qid);
@@ -680,7 +690,7 @@ void planificador_prioridades(){
                         pthread_mutex_unlock(&(wcb_elegido->mutex_wcb));
                         pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
                         mandar_a_desalojar(qcb_actual);
-                        remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
+                        //remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
 
                         //sem_wait(&termino_desalojo);
 
@@ -690,7 +700,7 @@ void planificador_prioridades(){
                         ///agregar_a_exec(qcb_exec);
                         //log_info(loggerMaster, "MANDO A EJECUTAR");
                         //mandar_a_ejecutar(qcb_exec, wcb_elegido);
-                        agregar_a_ready(qcb_actual);
+                        //agregar_a_ready(qcb_actual);
                     }
                     pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
                     pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
