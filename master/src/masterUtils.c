@@ -379,7 +379,7 @@ void atender_QueryControl(int fd){
             pthread_mutex_lock(&(qcb->mutex_qcb)); // Bloqueas para leer estado
             t_estado estado_actual = qcb->estado;  // Copias el estado
             pthread_mutex_unlock(&(qcb->mutex_qcb));
-                switch(qcb->estado) {
+                switch(estado_actual) {
                     case READY:
                         //actualizar_Estado(qcb, EXIT);
                         remover_qcb_cola(qcb->qid,cola_ready,&mutex_cola_ready);
