@@ -564,13 +564,15 @@ t_wcb* buscar_wcb_menor_prio() {
 
     for(int i = 1; i < list_size(lista_workers); i++){
         t_wcb* wcb_actual = list_get(lista_workers,i);
-        t_qcb* qcb_actual = buscar_qcb_por_ID(wcb_prio->qid_asig);
-        pthread_mutex_lock(&(qcb_actual->mutex_qcb));
-        if(qcb_prio->prioridad < qcb_actual->prioridad){
-            wcb_prio = wcb_actual;
-            qcb_prio = qcb_actual;
+        t_qcb* qcb_actual = buscar_qcb_por_ID(wcb_actual->qid_asig);
+        if(qcb_actual) {
+            pthread_mutex_lock(&(qcb_actual->mutex_qcb));
+            if(qcb_prio->prioridad < qcb_actual->prioridad){
+                wcb_prio = wcb_actual;
+                qcb_prio = qcb_actual;
+            }
+            pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
         }
-        pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
     }
     pthread_mutex_unlock(&mutex_workers);
     return wcb_prio;
