@@ -131,7 +131,7 @@ void* iniciar_conexion_master(void* arg){
 //CONVIENE UTILIZAR IN HILO PARA ESTO
 void esperar_queries(){
     while(true){
-        
+        log_info(loggerWorker, "Esperando nueva orden del Master");
         int cod_op = recibir_operacion(socket_master);
         //recv(socket_master, &cod_op, sizeof(int), NULL);
         log_info(loggerWorker, "Se recibio el codigo %d", cod_op);
@@ -170,7 +170,6 @@ void esperar_queries(){
 }
 // DESERIALIZAR EJECUTAR + LLAMADA A EJECUTAR_QUERY
 void* manejar_ejecutar(void *buffer) {
-    atomic_store(&hay_interrupt, 0);
     int offset = 0;
     int qid, pc, tamarch;
     char *archivo;
@@ -204,7 +203,7 @@ void notificar_fin_query_a_master(int qid, int motivo_op_code) {
     t_paquete* p = crear_paquete(WORKER_TO_MASTER_END);
     //agregar_a_paquete(p, &qid, sizeof(int));
     agregar_a_paquete(p, &motivo_op_code, sizeof(int));
-    log_info(loggerWorker,"Se le notifica a master fin de query %d, Motivo : %d", qid,motivo_op_code);
+    log_info(loggerWorker,"Se le notifica a master fin de query %d, Motivo : %d", qid, motivo_op_code);
     enviar_paquete(p, socket_master);
     eliminar_paquete(p);
 }
@@ -382,12 +381,9 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
     int direccion = 0;
     int tam = 0;
     int nuevo_tam = 0;
-   
     tipo_instruccion inst_tipo = obtener_instruccion(op);
-     
     char* file_tag = strtok(NULL, " "); //
-      
-    log_info(loggerWorker, "File_Tag a operar : %s", file_tag);
+
     // Si escribimos, leemos, creamos tag o truncamos, el archivo queda "abierto" o potencialmente modificado
     if (file_tag != NULL && archivos_abiertos != NULL)
         if (inst_tipo == WRITE || inst_tipo == TAG || inst_tipo == READ || inst_tipo == TRUNCATE)
@@ -593,7 +589,7 @@ void manejar_page_fault(char* file_tag, t_pagina* paginaAusente, int qid, t_moti
     int indice_marco_victima = seleccionar_victima(qid);
     pthread_mutex_lock(&memoria.mutex);
     t_marco* marco_victima = &memoria.marcos[indice_marco_victima];
-    pthread_mutex_unlock(&memoria.mutex);  
+    pthread_mutex_unlock(&memoria.mutex);
 
     if(marco_victima->ocupado) {
         char* file_tag_victima = marco_victima->file_tag;
@@ -601,8 +597,8 @@ void manejar_page_fault(char* file_tag, t_pagina* paginaAusente, int qid, t_moti
         // Buscar su tabla y entrada de página Seleccionar Marco Víctima (Bloqueamos RAM Física) pthread_mutex_lock(&memoria.mutex);
         pthread_mutex_lock(&mutex_tablas_paginas);
         t_tabla_paginas* tabla_victima = dictionary_get(tablas_de_paginas, file_tag_victima);
-        t_pagina* pagina_victima = buscar_o_crear_pagina(tabla_victima, num_pagina_victima);
         pthread_mutex_unlock(&mutex_tablas_paginas);
+        t_pagina* pagina_victima = buscar_o_crear_pagina(tabla_victima, num_pagina_victima);
 
         log_info(loggerWorker,"## Query <%d>: Se reemplaza la página <%s>/<%d> por la <%s>/<%d>", qid, file_tag_victima, num_pagina_victima, file_tag, paginaAusente->num_pagina); // LOG OBLIGATORIO
         
@@ -619,7 +615,7 @@ void manejar_page_fault(char* file_tag, t_pagina* paginaAusente, int qid, t_moti
                     log_error(loggerWorker, "Query %d: Falló al persistir víctima. Motivo: %d", qid, *motivo);
                     //pthread_mutex_unlock(&mutex_tablas_paginas);
                     free(copia_tag);
-                    return NULL; // Error al guardar la víctima
+                    return; // Error al guardar la víctima
                 }
             }
             pthread_mutex_lock(&mutex_tablas_paginas);
@@ -814,48 +810,55 @@ t_motivo ejecutar_flush(char* file_tag, int qid){
 
     pthread_mutex_lock(&mutex_tablas_paginas);
     t_tabla_paginas* tabla = dictionary_get(tablas_de_paginas, file_tag);
+    if (!tabla) {
+        pthread_mutex_unlock(&mutex_tablas_paginas);
+        return RESULTADO_OK; 
+    }
+
+    t_list* paginas_candidatas = list_create();
+    for (int i = 0; i < list_size(tabla->paginas); i++) {
+        t_pagina* pagina = list_get(tabla->paginas, i);
+        if (pagina->presente && pagina->modificado) {
+            // guardo copia de datos mínimos
+            int* elem = malloc(sizeof(int) * 2);
+            elem[0] = pagina->num_pagina; // [0] = nro_pagina
+            elem[1] = pagina->marco;      // [1] = nro_marco
+            list_add(paginas_candidatas, elem);
+        }
+    }
     pthread_mutex_unlock(&mutex_tablas_paginas);
 
-    if (!tabla) return RESULTADO_OK; 
-
     int paginas_flusheadas = 0;
-    int cantidad_paginas = list_size(tabla->paginas);
+    for (int i = 0; i < list_size(paginas_candidatas); i++) {
+        int* pag_candidata = list_get(paginas_candidatas, i);
+        int nro_pagina_logica = pag_candidata[0];
+        int nro_marco = pag_candidata[1];
 
-    for (int i = 0; i < cantidad_paginas; i++) {
+        pthread_mutex_lock(&memoria.mutex);
+        void* buffer_temporal = malloc(tamanio_bloque_storage);
+        void* contenido = memoria.buffer + (nro_marco * memoria.tamanio_marco);
+        memcpy(buffer_temporal, contenido, tamanio_bloque_storage);
+        pthread_mutex_unlock(&memoria.mutex);
+            
+        t_motivo resultado = enviar_bloque_a_storage(qid, file_tag, nro_pagina_logica, buffer_temporal);
+        free(buffer_temporal);
+        if (resultado != RESULTADO_OK) {
+            for (int j = 0; j < list_size(paginas_candidatas); j++) free(list_get(paginas_candidatas, j));
+            list_destroy(paginas_candidatas);
+            log_error(loggerWorker, "FLUSH FALLIDO pág %d. Motivo: %d", nro_marco, resultado);
+            return resultado; 
+        }
+
+        t_pagina* pag = buscar_o_crear_pagina(tabla, nro_pagina_logica);
         pthread_mutex_lock(&mutex_tablas_paginas);
-        t_pagina* pagina = list_get(tabla->paginas, i);
-        bool es_candidata = (pagina->presente && pagina->modificado);
-        // int nro_marco = pagina->marco;
-        // Por que esto aca del marco? no puede cambiar ponele?
-        // En ese caso habria que extender el mutex?
-        int nro_marco = pagina->marco;
-        int nro_pagina_logica = pagina->num_pagina; // Para Storage
-        //t_marco *marcoPag = obtener_marco_de_pagina(file_tag, nro_pagina_logica);
+        pag->modificado = false;
         pthread_mutex_unlock(&mutex_tablas_paginas);
-
-        if (es_candidata) {
-            pthread_mutex_lock(&memoria.mutex);
-            void* buffer_temporal = malloc(tamanio_bloque_storage);
-            void* contenido = memoria.buffer + (nro_marco * memoria.tamanio_marco);
-            memcpy(buffer_temporal, contenido, tamanio_bloque_storage);
-            pthread_mutex_unlock(&memoria.mutex);
-            
-            t_motivo resultado = enviar_bloque_a_storage(qid, file_tag, nro_pagina_logica, buffer_temporal);
-            free(buffer_temporal);
-            if (resultado != RESULTADO_OK) {
-                log_error(loggerWorker, "FLUSH FALLIDO pág %d. Motivo: %d", nro_marco, resultado);
-                return resultado; 
-            }
-
-            pthread_mutex_lock(&mutex_tablas_paginas);
-            pagina->modificado = false;
-            pthread_mutex_unlock(&mutex_tablas_paginas);
-            
-            paginas_flusheadas++;
-        } /*else {
-            pthread_mutex_unlock(&mutex_tablas_paginas);
-        }*/
-    }
+        
+        paginas_flusheadas++;
+    } 
+    //pthread_mutex_unlock(&mutex_tablas_paginas);
+    for (int j = 0; j < list_size(paginas_candidatas); j++) free(list_get(paginas_candidatas, j));
+    list_destroy(paginas_candidatas);
     log_info(loggerWorker, "FLUSH exitoso %s. Páginas: %d", file_tag, paginas_flusheadas);
     return RESULTADO_OK;
 }
@@ -1334,7 +1337,7 @@ int reemplazo_clock_modificado(int qid) {
     return victima;
 }
 
-// Buscar bloque con la menor ultima_ref
+// Buscar bloque con la menor ultima_refhkjhkjk
 int reemplazo_lru(int qid) {
     if (memoria.cant_marcos <= 0) return 0;
 
@@ -1355,9 +1358,12 @@ int reemplazo_lru(int qid) {
         
         pthread_mutex_lock(&mutex_tablas_paginas);
         t_tabla_paginas* tabla = dictionary_get(tablas_de_paginas, m->file_tag);
+        pthread_mutex_unlock(&mutex_tablas_paginas);
         if (!tabla) continue; // debería existir siempre
         t_pagina* p = buscar_o_crear_pagina(tabla, m->pagina_logica);
+        
         if (!p) continue;
+        pthread_mutex_lock(&mutex_tablas_paginas);
         if (p->ultima_ref < min_ref) {
             min_ref = p->ultima_ref;
             victima = i;
@@ -1380,9 +1386,11 @@ void inicializar_tablas_paginas() {
 // Función auxiliar para liberar UNA tabla
 void liberar_elemento_tabla(void* elemento) {
     t_tabla_paginas* tabla = (t_tabla_paginas*)elemento;
+    pthread_mutex_lock(&mutex_tablas_paginas);
     if(tabla->paginas) {
         list_destroy_and_destroy_elements(tabla->paginas, free);
     }
+    pthread_mutex_unlock(&mutex_tablas_paginas);
     free(tabla);
 }
 
@@ -1399,15 +1407,17 @@ void liberar_tablas_paginas() {
 t_tabla_paginas* obtener_o_crear_tabla_paginas(char * file_tag) {
     pthread_mutex_lock(&mutex_tablas_paginas);
     t_tabla_paginas* tabla = dictionary_get(tablas_de_paginas, file_tag);
+    pthread_mutex_unlock(&mutex_tablas_paginas);
     if(!tabla) {
         log_info(loggerWorker, "Creando nueva Tabla de Páginas para %s", file_tag);
         tabla = malloc(sizeof(t_tabla_paginas));
         strcpy(tabla->file_tag, file_tag);
         tabla->paginas = list_create();
         crearPagina(tabla, 0);
+        pthread_mutex_lock(&mutex_tablas_paginas);
         dictionary_put(tablas_de_paginas, file_tag, tabla);
+        pthread_mutex_unlock(&mutex_tablas_paginas);
     }
-    pthread_mutex_unlock(&mutex_tablas_paginas);
     return tabla;
 }
 
@@ -1419,16 +1429,22 @@ t_pagina* crearPagina(t_tabla_paginas* tabla, int num_pagina) {
     pagina->modificado = false;  // No modificado
     pagina->uso = false;         // No usada
     pagina->ultima_ref = 0;      // Sin referencias aún
+    pthread_mutex_lock(&mutex_tablas_paginas);
     list_add(tabla->paginas, pagina);
+    pthread_mutex_unlock(&mutex_tablas_paginas);
     return pagina;
 }
 
 t_pagina* buscar_o_crear_pagina(t_tabla_paginas* tabla, int num_pagina) {
+    pthread_mutex_lock(&mutex_tablas_paginas);
     for (int i = 0; i < list_size(tabla->paginas); i++) {
         t_pagina* p = list_get(tabla->paginas, i);
-        if (p->num_pagina == num_pagina)
+        if (p->num_pagina == num_pagina) {
+            pthread_mutex_unlock(&mutex_tablas_paginas);
             return p;
+        }
     }
+    pthread_mutex_unlock(&mutex_tablas_paginas);
     return crearPagina(tabla, num_pagina);
 }
 

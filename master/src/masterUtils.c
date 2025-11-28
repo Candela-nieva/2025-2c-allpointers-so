@@ -25,7 +25,7 @@ sem_t hay_worker_libre;
 sem_t replanificar;
 sem_t hay_en_Exit;
 sem_t hay_en_Exec;
-
+sem_t termino_desalojo;
 t_dictionary *diccionario_qcb = NULL;
 //t_dictionary *diccionario_Workers = NULL;
 
@@ -80,6 +80,7 @@ void inicializar_semaforos() {
     sem_init(&hay_en_Exec, 0, 0);
     sem_init(&hay_en_Exit, 0, 0);
     sem_init(&hay_worker_libre, 0, 0);
+    sem_init(&termino_desalojo, 0, 0);
 
     pthread_mutex_init(&mutex_cant_workers, NULL);
     pthread_mutex_init(&mutex_workers, NULL);
@@ -197,19 +198,50 @@ void atender_Worker(int fd){
                 pthread_mutex_unlock(&wcb->mutex_wcb);
                 agregar_a_exit(aDesalojar);
                 sem_post(&hay_en_Exit);
+            } else {
+                pthread_mutex_unlock(&wcb->mutex_wcb);
             }
-            pthread_mutex_unlock(&wcb->mutex_wcb);
             eliminar_wcb(wcb);
             return;
         }
         switch(op) {
             //case LECTURA:
             //case EXIT_QUERY:
+            case PC_ACTUALIZADO:
+                log_info(loggerMaster, "WORKER <%d>, devuelve PC de QID %d ", id_worker, qid_asig);
+                pthread_mutex_lock(&(wcb->mutex_socket));
+                void *bufferPC = recibir_buffer(wcb->socket);
+                pthread_mutex_unlock(&(wcb->mutex_socket));
+                int pc_actualizado;
+                memcpy(&pc_actualizado, bufferPC, sizeof(int));
+                free(bufferPC);
+                log_info(loggerMaster, "WORKER <%d>, PC Acualizado %d", id_worker, pc_actualizado);
+                pthread_mutex_lock(&(wcb->mutex_wcb));
+                t_qcb* qcbDesaloj = buscar_qcb_por_ID(wcb->qid_asig);
+                pthread_mutex_lock(&(qcbDesaloj->mutex_qcb));
+                qcbDesaloj->pc = pc_actualizado;
+                pthread_mutex_unlock(&(qcbDesaloj->mutex_qcb));
+                int wid = wcb->wid;
+                wcb->qid_asig = -1;
+                wcb->esta_libre = true;
+                pthread_mutex_unlock(&(wcb->mutex_wcb));
+
+                //sem_post(&termino_desalojo);
+
+                log_info(loggerMaster, "Query %d desalojada del Worker %d, PC actualizado a %d", qid_asig, wid, pc_actualizado);
+                if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
+                    sem_post(&hay_worker_libre);
+                }else{
+                    sem_post(&replanificar);
+                }
+                break;
             case MASTER_TO_QC_READ_RESULT:
                 log_info(loggerMaster, "WORKER <%d>, Envia resultado de read a Query %d ", id_worker, wcb->qid_asig);
                 //enviar a query resultado de read
                 int offset = 0;
+                pthread_mutex_lock(&(wcb->mutex_socket));
                 void *buffer = recibir_buffer(fd);
+                pthread_mutex_unlock(&(wcb->mutex_socket));
                 char *contenido, *arch, *tag;
                 int tamCont, tamArch, tamTag;
                 
@@ -260,7 +292,9 @@ void atender_Worker(int fd){
 
             case WORKER_TO_MASTER_END:
                 //t_motivo motivoExit = recibir_operacion(fd);
+                pthread_mutex_lock(&(wcb->mutex_socket));
                 void *bufferMotivo = recibir_buffer(fd);
+                pthread_mutex_unlock(&(wcb->mutex_socket));
                 t_motivo motivoExit;
                 memcpy(&motivoExit, bufferMotivo, sizeof(int));
                 free(bufferMotivo);
@@ -374,34 +408,9 @@ void mandar_a_desalojar(t_qcb* qcb) {
     pthread_mutex_unlock(&(worker->mutex_wcb));
     log_info(loggerMaster, "Enviando Desalojo a worker ID <%d>", wid);
     if(worker){
-        enviar_operacion(socket,DESALOJO);
-        int op = recibir_operacion(socket);
-        //esto podria terminar siendo un case de atender worker 
-        if(op != PC_ACTUALIZADO){
-            log_error(loggerMaster, "Error al recibir confirmacion de desalojo del Worker %d para la Query %d, se recibio %d", wid, qid, op);
-            return;
-        }
-        void *buffer = recibir_buffer(socket);
-        int pc_actualizado;
-        memcpy(&pc_actualizado, buffer, sizeof(int));
-        free(buffer);
-
-        pthread_mutex_lock(&(qcb->mutex_qcb));
-        qcb->pc = pc_actualizado;
-        pthread_mutex_unlock(&(qcb->mutex_qcb));
-
-        pthread_mutex_lock(&(worker->mutex_wcb));
-        worker->qid_asig = -1;
-        worker->esta_libre = true;
-        pthread_mutex_unlock(&(worker->mutex_wcb));
-
-        log_info(loggerMaster, "Query %d desalojada del Worker %d, PC actualizado a %d", qid, wid, pc_actualizado);
-
-        if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
-            sem_post(&hay_worker_libre);
-        }else{
-            sem_post(&replanificar);
-        }
+        pthread_mutex_lock(&(worker->mutex_socket));
+        enviar_operacion(socket, DESALOJO);
+        pthread_mutex_unlock(&(worker->mutex_socket));
         return;
     }
     log_info(loggerMaster, "NO SE ENCONTRO a worker ID <%d>", worker->wid);
@@ -512,6 +521,7 @@ t_wcb *crear_wcb(int id, int socket) {
     wcb->socket = socket;
     pthread_mutex_init(&wcb->mutex_wcb, NULL);
     //MUTEX PARA LISTA DE WORKERS
+    pthread_mutex_init(&(wcb->mutex_socket),NULL);
     pthread_mutex_lock(&mutex_workers);
     list_add(lista_workers, wcb);
     pthread_mutex_unlock(&mutex_workers);
@@ -647,7 +657,6 @@ void planificador_prioridades(){
                     agregar_a_exec(qcb_exec);
                     mandar_a_ejecutar(qcb_exec, wcb_elegido);
                 }else{
-
                     log_info(loggerMaster, "DESALOJO A REALIZAR");
                     wcb_elegido = buscar_wcb_menor_prio();
                     log_info(loggerMaster, "WORKER A DESALOJAR");
@@ -663,13 +672,15 @@ void planificador_prioridades(){
                         pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
                         remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
                         mandar_a_desalojar(qcb_actual);
-                        log_info(loggerMaster, "REMUEVO DE COLA READY");
-                        remover_qcb_cola(qid_exec, cola_ready, &mutex_cola_ready);
-                        log_info(loggerMaster, "AGREGO A EXEC");
-                        agregar_a_exec(qcb_exec);
-                        log_info(loggerMaster, "MANDO A EJECUTAR");
-                        mandar_a_ejecutar(qcb_exec, wcb_elegido);
 
+                        //sem_wait(&termino_desalojo);
+
+                        //log_info(loggerMaster, "REMUEVO DE COLA READY");
+                        //remover_qcb_cola(qid_exec, cola_ready, &mutex_cola_ready);
+                        //log_info(loggerMaster, "AGREGO A EXEC");
+                        ///agregar_a_exec(qcb_exec);
+                        //log_info(loggerMaster, "MANDO A EJECUTAR");
+                        //mandar_a_ejecutar(qcb_exec, wcb_elegido);
                         agregar_a_ready(qcb_actual);
                     }
                     pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
@@ -717,7 +728,9 @@ void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker) {
     agregar_a_paquete(paquete, &(qcb->qid), sizeof(int));
     agregar_a_paquete(paquete, &(qcb->pc), sizeof(int));
     agregar_a_paquete_string(paquete, qcb->ruta_arch, strlen(qcb->ruta_arch));
+    pthread_mutex_lock(&(worker->mutex_socket));
     enviar_paquete(paquete, worker->socket);
+    pthread_mutex_unlock(&(worker->mutex_socket));
     pthread_mutex_unlock(&(qcb->mutex_qcb));
     pthread_mutex_unlock(&worker->mutex_wcb);
     eliminar_paquete(paquete);

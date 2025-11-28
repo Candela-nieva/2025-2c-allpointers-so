@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
     pthread_join(hilo_storage, NULL);
 
     liberar_recursos_worker();
-    free(id);
+    //free(id);
     return 0;
 }
 

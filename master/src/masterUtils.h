@@ -44,6 +44,7 @@ typedef struct {
     int qid_asig;
     int socket;
     pthread_mutex_t mutex_wcb;
+    pthread_mutex_t mutex_socket;
 } t_wcb;
 
 
