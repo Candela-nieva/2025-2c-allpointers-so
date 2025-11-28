@@ -562,7 +562,7 @@ t_wcb *buscar_worker_libre(){
                 pthread_mutex_unlock(&mutex_workers);
                 return candidato;
             } else {
-                pthread_mutex_lock(&(candidato->mutex_wcb));
+                pthread_mutex_unlock(&(candidato->mutex_wcb));
             }
         }
         
