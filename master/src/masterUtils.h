@@ -45,6 +45,7 @@ typedef struct {
     int socket;
     pthread_mutex_t mutex_wcb;
     pthread_mutex_t mutex_socket;
+    sem_t sem_desalojo;
 } t_wcb;
 
 

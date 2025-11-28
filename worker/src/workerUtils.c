@@ -272,8 +272,7 @@ void ejecutar_query(int pc_inicial, const char* archivo_relativo, int qid) {
     while (fgets(linea, sizeof(linea), file) != NULL) { // Mientras haya líneas por leer (fgets lee una línea)
         
         trim_newline(linea);
-        log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, linea); // fetch de la linea LOG OBLIGATORIO
-        
+
         es_end = ejecutar_instruccion(linea, qid, pc, archivos_abiertos);
         
         if (es_end) {
@@ -360,14 +359,14 @@ bool ejecutar_instruccion(const char* instruccion, int qid, int pc, t_list* arch
     trim_newline(copia);
 
     char* op = strtok(copia, " "); // Obtenemos la operación (primera palabra)
-    log_info(loggerWorker, "Operacion registrada : %s", op);
-     
     if(!op) {
         log_info(loggerWorker, "Query %d: - Instrucción vacía en PC=%d", qid, pc);
         free(copia);
         return false;
     }
-      
+
+    log_info(loggerWorker, "## Query %d: FETCH - Program Counter: %d - %s", qid, pc, op); // LOG OBLIGATORIO
+
     // Guardamos la operación para el log obligatorio
     char instruccion_log[256];
     strncpy(instruccion_log, op, 255);
