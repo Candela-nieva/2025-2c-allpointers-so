@@ -186,7 +186,7 @@ void atender_Worker(int fd){
             log_info(loggerMaster, "## Se desconecta el Worker <%d> - Se finaliza la Query <%d> - Cantidad total de Workers: <%d>", id_worker, qid_asig, cant_workers);
             pthread_mutex_unlock(&mutex_cant_workers);
 
-            sem_post(&(wcb->sem_desalojo));
+            //sem_post(&(wcb->sem_desalojo));
 
             pthread_mutex_lock(&wcb->mutex_wcb);
             if(wcb->qid_asig >= 0){
@@ -227,7 +227,7 @@ void atender_Worker(int fd){
                 qcbDesaloj->pc = pc_actualizado;
                 pthread_mutex_unlock(&(qcbDesaloj->mutex_qcb));
 
-                sem_post(&(wcb->sem_desalojo));
+                //sem_post(&(wcb->sem_desalojo));
 
                 log_info(loggerMaster, "Query %d desalojada del Worker %d, PC actualizado a %d", qid_asig, wid, pc_actualizado);
                 if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
@@ -416,7 +416,7 @@ void mandar_a_desalojar(t_qcb* qcb) {
         pthread_mutex_lock(&(worker->mutex_socket));
         enviar_operacion(socket, DESALOJO);
         pthread_mutex_unlock(&(worker->mutex_socket));
-        sem_wait(&(worker->sem_desalojo));
+        //sem_wait(&(worker->sem_desalojo));
         return;
     } else {
         log_info(loggerMaster, "NO SE ENCONTRO a worker del Query <%d>", qid);
