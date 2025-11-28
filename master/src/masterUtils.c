@@ -175,7 +175,7 @@ void atender_Worker(int fd){
     }else{
         sem_post(&replanificar);
     }
-        while(true){
+    while(true){
         op_code op = recibir_operacion(fd);
         pthread_mutex_lock(&wcb->mutex_wcb);
         int qid_asig = wcb->qid_asig;
@@ -679,8 +679,8 @@ void planificador_prioridades(){
                         log_info(loggerMaster, "## Se desaloja la Query <%d> (<%d>) del Worker <%d> - Motivo: PRIORIDAD", qcb_actual->qid, qcb_actual->prioridad, wcb_elegido->wid);
                         pthread_mutex_unlock(&(wcb_elegido->mutex_wcb));
                         pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
-                        remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
                         mandar_a_desalojar(qcb_actual);
+                        remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
 
                         //sem_wait(&termino_desalojo);
 
