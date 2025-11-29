@@ -691,10 +691,12 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
             
             if(motivo != RESULTADO_OK){
                 free(buffer_lectura);
+                free(copia_tag);
                 return motivo;
             }    
             if (!pagina) {
                 free(buffer_lectura);
+                free(copia_tag);
                 return motivo;
             }
             
