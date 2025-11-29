@@ -208,7 +208,7 @@ void atender_Worker(int fd){
         switch(op) {
             case PC_ACTUALIZADO:
                 //log_info(loggerMaster, "WORKER <%d>, devuelve PC de QID %d ", id_worker, qid_asig);
-                log_info(loggerMaster,"MANDO PC ACTUALIZADO");
+                
                 pthread_mutex_lock(&(wcb->mutex_socket));
                 void *bufferPC = recibir_buffer(wcb->socket);
                 pthread_mutex_unlock(&(wcb->mutex_socket));
@@ -216,7 +216,7 @@ void atender_Worker(int fd){
                 int pc_actualizado;
                 memcpy(&pc_actualizado, bufferPC, sizeof(int));
                 free(bufferPC);
-                log_info(loggerMaster,"SE RECIBIO PC ACTUALIZADO");
+                
                 //log_info(loggerMaster, "WORKER <%d>, PC Acualizado %d", id_worker, pc_actualizado);
                 pthread_mutex_lock(&(wcb->mutex_wcb));
                 t_qcb* qcbDesaloj = buscar_qcb_por_ID(wcb->qid_asig);
@@ -224,13 +224,13 @@ void atender_Worker(int fd){
                 wcb->qid_asig = -1;
                 wcb->esta_libre = true;
                 pthread_mutex_unlock(&(wcb->mutex_wcb));
-                log_info(loggerMaster,"SE MARCO LIBRE AL WORKER");
+                
                 pthread_mutex_lock(&(qcbDesaloj->mutex_qcb));
                 qcbDesaloj->pc = pc_actualizado;
                 pthread_mutex_unlock(&(qcbDesaloj->mutex_qcb));
-                log_info(loggerMaster,"SE ACTUALIZO EL PC DE QUERY");
+                
                 sem_post(&(wcb->sem_desalojo));
-                log_info(loggerMaster,"SE PERMITE SEGUIR DESPUES DE DESALOJO");
+                
                 log_info(loggerMaster, "Query %d desalojada del Worker %d, PC actualizado a %d", qid_asig, wid, pc_actualizado);
                 if(strcmp(config_struct->algoritmo_planificacion, "FIFO") == 0){
                     sem_post(&hay_worker_libre);
@@ -330,7 +330,7 @@ void atender_Worker(int fd){
                     sem_post(&hay_worker_libre);
                 }else{
                     sem_post(&replanificar);
-                    log_info(loggerMaster, "Replanificar LUEGO DE END DE QUERY!!!");
+                    
                 }
                 break;
 
@@ -412,7 +412,7 @@ void atender_QueryControl(int fd){
 }
 //INTENTO IMPLEMENTAR DESAALOJOO
 void mandar_a_desalojar(t_qcb* qcb) {
-    log_info(loggerMaster, "COMIENZO MANDAR A DESALOJAR");
+    
     
     //pthread_mutex_lock(&(qcb->mutex_qcb));
     if(qcb){
@@ -420,7 +420,7 @@ void mandar_a_desalojar(t_qcb* qcb) {
         //pthread_mutex_unlock(&(qcb->mutex_qcb));
         t_wcb* worker = buscar_worker_por_qid(qid);
         if(worker) {
-            log_info(loggerMaster, "LOCKE MUTEX WCB A DESALOJAR ");
+           
             pthread_mutex_lock(&(worker->mutex_wcb));
             int wid = worker->wid;
             int socket = worker->socket;
@@ -430,7 +430,7 @@ void mandar_a_desalojar(t_qcb* qcb) {
             enviar_operacion(socket, DESALOJO);
             pthread_mutex_unlock(&(worker->mutex_socket));
             sem_wait(&(worker->sem_desalojo));
-            log_info(loggerMaster,"PASE DESALOJO!");
+            
             return;
         } else {
             log_info(loggerMaster, "NO SE ENCONTRO a worker del Query <%d>", qid);
@@ -519,9 +519,7 @@ void eliminar_qcb_diccionario(int qid) {
     pthread_mutex_lock(&mutex_diccionario_qcb);
     t_qcb *aElim = dictionary_remove(diccionario_qcb, key);
     pthread_mutex_unlock(&mutex_diccionario_qcb);
-    log_info(loggerMaster, "Voy a eliminar Query %d", qid);
     eliminar_qcb(aElim);
-    log_info(loggerMaster, "Ya elimine la Query %d", qid);
     free(key); 
 }
 
@@ -681,46 +679,33 @@ void planificador_fifo(){
 void planificador_prioridades(){
     while(true){
         sem_wait(&replanificar);
-        log_info(loggerMaster, "A REPLANIFICAR");
         if(list_size(cola_ready) > 0){
-            log_info(loggerMaster, "HAY PROCESO EN READY");
             //log_info(loggerMaster, "Hay proceso en READY");
             t_qcb* qcb_exec = buscar_qcb_mayor_prio();
-            log_info(loggerMaster, "PASO EL MUTEX DE CANT WORKERS");
             pthread_mutex_lock(&mutex_cant_workers);
             int workers_totales = cant_workers;
             pthread_mutex_unlock(&mutex_cant_workers);
-            log_info(loggerMaster, "LO PASE MUTEX CANT WORKERS");
             if(workers_totales > 0) {
                 //t_wcb* wcb_elegido = buscar_wcb_menor_prio();
-                log_info(loggerMaster, "PASO MUTEX DE QCB CANDIDATO");
                 pthread_mutex_lock(&(qcb_exec->mutex_qcb));
                 int qid_exec = qcb_exec->qid;
                 log_info(loggerMaster, "Se encontro la Query <%s> con prioridad <%d> - Id asignado: <%d>", qcb_exec->ruta_arch, qcb_exec->prioridad, qid_exec);
                 pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
-                log_info(loggerMaster, "LO PASE MUTEX QCB CANDIDATO");
-                log_info(loggerMaster, "BUSCO WORKER LIBRE");
                 t_wcb* wcb_elegido = buscar_worker_libre();
                 if(wcb_elegido){
-                    log_info(loggerMaster, "WORKER LIBRE ENCONTRADO !");
                     remover_qcb_cola(qid_exec, cola_ready, &mutex_cola_ready);
                     agregar_a_exec(qcb_exec);
                     mandar_a_ejecutar(qcb_exec, wcb_elegido);
                 }else{
-                    log_info(loggerMaster, "WORKER LIBRE NO ENCONTRADO, VERIFICANDO SI SE DESALOJA");
                     wcb_elegido = buscar_wcb_menor_prio();
-                    
                     if(!wcb_elegido) continue;
-                    log_info(loggerMaster, "SE ENCONTRO CANDIDATO");
                     pthread_mutex_lock(&(wcb_elegido->mutex_wcb)); 
                     int wid = wcb_elegido->wid;
                     int qid_actual = wcb_elegido->qid_asig;
                     pthread_mutex_unlock(&(wcb_elegido->mutex_wcb));
-                    log_info(loggerMaster, "BUSCO QCB QUE CORRESPONDE A WCB");
                     t_qcb *qcb_actual = buscar_qcb_por_ID(qid_actual);
                     if(qcb_actual) {
                         bool desalojar = false;
-                        log_info(loggerMaster, "COMPARANDO PRIOS");
                         pthread_mutex_lock(&(qcb_exec->mutex_qcb));
                         pthread_mutex_lock(&(qcb_actual->mutex_qcb));
                         if(qcb_exec->prioridad < qcb_actual->prioridad)
@@ -728,23 +713,19 @@ void planificador_prioridades(){
                         int prio_exec = qcb_exec->prioridad;
                         pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
                         pthread_mutex_unlock(&(qcb_exec->mutex_qcb));
-                        log_info(loggerMaster, "VERIFICANDO DESALOJO A REALIZAR");
                         if(desalojar){
                             // LOG OBLIGATORIO
                             log_info(loggerMaster, "## Se desaloja la Query <%d> (<%d>) del Worker <%d> - Motivo: PRIORIDAD", qid_actual, prio_exec, wid);
                             mandar_a_desalojar(qcb_actual);
-                            log_info(loggerMaster,"MANDE A DESALOJAR");
                             pthread_mutex_lock(&(qcb_actual->mutex_qcb));
                             bool murio = (qcb_actual->estado == EXIT); 
                             pthread_mutex_unlock(&(qcb_actual->mutex_qcb));
-                            log_info(loggerMaster, "VERIFICO SI LA DESALOJADA SIGUE VIVA");
                             if(!murio) {
                                // Desalojo exitoso: Mover víctima a Ready y Ejecutar nueva
                                 remover_qcb_cola(qid_actual, cola_exec, &mutex_cola_exec);
                                 agregar_a_ready(qcb_actual);
                                 remover_qcb_cola(qid_exec, cola_ready, &mutex_cola_ready);
                                 agregar_a_exec(qcb_exec);
-                                log_info(loggerMaster, "Vhola llegue aca ok");
                                 mandar_a_ejecutar(qcb_exec, wcb_elegido);
                             } else {
                                 sem_post(&replanificar);
@@ -780,7 +761,6 @@ void* hilo_aging(void* arg){
     while(qcb->estado == READY && qcb->prioridad > 0){
         
         usleep(tiempo_aging * 1000);
-        log_info(loggerMaster,"CAMBIANDO PRIORIDAD JEJE");
         pthread_mutex_lock(&(qcb->mutex_qcb));
         if(qcb->estado != READY){
             pthread_mutex_unlock(&(qcb->mutex_qcb));
@@ -791,15 +771,13 @@ void* hilo_aging(void* arg){
         log_info(loggerMaster, "##%d Cambio de prioridad: %d - %d", qcb->qid, prioridadAntes, qcb->prioridad);
         pthread_mutex_unlock(&(qcb->mutex_qcb));
         sem_post(&replanificar);
-        log_info(loggerMaster,"REPLANIFICAR DESPUES DE BAJAR PRIO");
     }
-
     return NULL;
 }
 
 
 void mandar_a_ejecutar(t_qcb* qcb, t_wcb* worker) {
-    log_info(loggerMaster,"ENVIANDO A EJECUTAR");
+    //log_info(loggerMaster,"ENVIANDO A EJECUTAR");
     pthread_mutex_lock(&worker->mutex_wcb);
     worker->esta_libre = false;
     pthread_mutex_lock(&(qcb->mutex_qcb));

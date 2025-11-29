@@ -1263,7 +1263,7 @@ t_motivo op_delete_tag(char* nombreArch, char *nombreTag, int query_id){
     system(cmd);
     eliminarStructTag(nombreArch, nombreTag);
     // LOG OBLIGATORIO //
-    log_info(loggerStorage, "“##%d - Tag Eliminado %s:%s", query_id, nombreArch, nombreTag);
+    log_info(loggerStorage, "##%d - Tag Eliminado %s:%s", query_id, nombreArch, nombreTag);
     return RESULTADO_OK;
 }
 
