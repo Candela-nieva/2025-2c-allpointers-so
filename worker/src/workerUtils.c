@@ -688,9 +688,11 @@ t_motivo ejecutar_read(char* file_tag, int direccion_base, int tam, int qid) {
             log_info(loggerWorker, "Query %d: Page fault en READ: %s - Pagina %d", qid, file_tag, pagina_inicial);
             t_motivo motivo;
             manejar_page_fault(file_tag, pagina, qid, &motivo); // modifica la pagina para setear el nuevo marco
-            if(motivo != RESULTADO_OK)
-                //posible free aca
+            
+            if(motivo != RESULTADO_OK){
+                free(buffer_lectura);
                 return motivo;
+            }    
             if (!pagina) {
                 free(buffer_lectura);
                 return motivo;
